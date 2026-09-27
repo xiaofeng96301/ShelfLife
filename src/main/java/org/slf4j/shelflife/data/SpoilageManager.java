@@ -58,7 +58,7 @@ public final class SpoilageManager {
             ResourceLocation fileId = fileEntry.getKey();
             for (SpoilageRule.Entry entry : fileEntry.getValue().entries()) {
                 SpoilageConfig config = new SpoilageConfig(entry.maxSpoilage(), entry.ticksPerSpoilage(),
-                        entry.result(), entry.tint());
+                        entry.result(), entry.tint(), entry.overlay());
                 String ref = entry.itemRef();
                 if (ref.startsWith("#")) {
                     resolveTag(fileId, ref.substring(1), config, resolved);

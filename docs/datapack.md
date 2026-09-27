@@ -73,6 +73,7 @@ ShelfLife 的全部数值都在数据包里。这份文档是给**要在别的�
 | `ticks_per_spoilage` | ✅ | 每消耗 1 点需要的游戏刻（20 刻 = 1 秒） |
 | `result` | ❌ | 烂完变成什么。默认 `shelflife:rotten_leftovers`；写 `minecraft:air` = **不转化**，只是烂在手里 |
 | `tint` | ❌ | 烂透时的染色，`#RRGGBB`。默认 `#7E8C4A`（发暗的橄榄绿） |
+| `overlay` | ❌ | `true` = 在物品模型的**第二层**上淡入霉斑，而不是整块染色。默认 `false` |
 
 `tint` 的几点说明：
 
@@ -89,6 +90,25 @@ ShelfLife 的全部数值都在数据包里。这份文档是给**要在别的�
   ```json
   "minecraft:cookie": { "ticks_per_spoilage": 3600, "result": "shelflife:moldy_cookie", "tint": "#46c49a" }
   ```
+
+### `overlay`：让物品"保持原色、只长霉"
+
+整块染色有个绕不过去的上限：**它只能压暗**。想要"曲奇一直是正常的亮褐色，只是慢慢长出绿霉"，
+就得用 `overlay: true`，它换一条路：
+
+| 层 | tintIndex | 收到什么 | 效果 |
+|---|---|---|---|
+| 第 0 层（物品自己的贴图） | 0 | `-1`（不染） | **保持原本的亮度** |
+| 第 1 层（霉斑图） | 1 | `tint` 的颜色，**alpha = 腐烂深度** | 霉从全透明一点点浮现 |
+
+注意几点：
+
+- **物品模型的 JSON 里必须写出 `layer1`**，否则不会问到 1 号索引。示例见本模组内置的
+  `assets/minecraft/models/item/cookie.json`（它覆盖了原版曲奇的模型，只多了一行 `layer1`）
+- 叠加层的贴图**建议画成灰阶或浅色** —— 真正的颜色由 `tint` 决定，这样同一张图配不同 `tint`
+  就能复用到别的食物上
+- 贴图其余部分必须**完全透明**（这是它"只长霉"的前提）
+- **`overlay` 和 `result` 不冲突**：霉长满之后照样会换成 `result` 指定的物品
 
 两个数值都必须 **≥ 1**（`ticks_per_spoilage` 为 0 会导致结算时除零）。
 

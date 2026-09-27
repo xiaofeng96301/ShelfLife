@@ -46,6 +46,18 @@ public final class SpoilageTintHandler {
      */
     private static final int FRESH_COLOR = 0xFFFFFFFF;
 
+    /** 模型的第 0 层：物品自己的贴图。 */
+    private static final int BASE_LAYER = 0;
+
+    /** 第 1 层：霉斑叠加层（只有 {@code overlay} 物品的模型里才有）。 */
+    private static final int OVERLAY_LAYER = 1;
+
+    /** 原版约定：这一层不染。 */
+    private static final int NO_TINT = -1;
+
+    /** 完全透明。叠加层"还没长霉"时必须用它 —— 用白色会把整张霉斑图直接铺出来。 */
+    private static final int TRANSPARENT = 0x00FFFFFF;
+
     /** 由 {@link #onRegisterItemColors} 存下来，供配置表变动时补登记。 */
     private static ItemColors itemColors;
 
@@ -72,32 +84,66 @@ public final class SpoilageTintHandler {
         itemColors.register(SpoilageTintHandler::tint, items.toArray(Item[]::new));
     }
 
+    /**
+     * 两种染色模式，由数据包的 {@code overlay} 决定：
+     *
+     * <ul>
+     *   <li><b>普通（默认）</b>：layer0 从白渐变到 {@code tint} —— <b>整块乘性变暗偏色</b>。
+     *       对"肉变暗发绿"这种效果够用，但拿不到"保持原色、只长霉"。</li>
+     *   <li><b>叠加层（{@code overlay: true}）</b>：layer0 <b>完全不染</b>（物品保持原本的亮色），
+     *       layer1 用 {@code tint} 上色、<b>alpha 当腐烂深度用</b> —— 霉从全透明一点点浮现。
+     *       物品模型的 JSON 里必须写出 layer1 才会被问到这个索引（见 {@code assets/minecraft/models/item/cookie.json}）。</li>
+     * </ul>
+     */
     private static int tint(ItemStack stack, int tintIndex) {
-        // 只染 layer0。其它层给 -1（= 不染），别去动它们原本的样子
-        if (tintIndex != 0) return -1;
-
-        SpoilageData data = stack.get(Shelflife.SPOILAGE.get());
-        if (data == null || data.maxSpoilage() <= 0) return FRESH_COLOR;
-
         SpoilageConfig config = ClientSpoilageCache.get(stack.getItem());
-        if (config == null) return FRESH_COLOR;
+        if (config == null) {
+            // 底层保持原样；其它层默认透明，免得把没在管的叠加层显示出来
+            return tintIndex == BASE_LAYER ? FRESH_COLOR : TRANSPARENT;
+        }
 
-        Level level = Minecraft.getInstance().level;
-        if (level == null) return FRESH_COLOR;
-
-        // 用惰性推算而不是组件里存的值 —— 背包不再定时结算，存的值可能落后。
-        // 倍率按物品取（容器里的物品和玩家背包里的物品可能不是同一个倍率），
-        // 必须和 tooltip 走同一个函数，否则颜色和数字会对不上。
-        // 这里也用带小数的版本，颜色才是平滑渐变而不是一跳一跳
-        double consumed = SpoilageSettlement.effectiveFractional(data, config,
-                ClientEnvironmentCache.rateFor(stack), level.getGameTime());
-        float remaining = 1.0F - (float) (consumed / data.maxSpoilage());
-        if (remaining >= TINT_START_REMAINING) return FRESH_COLOR;
-
-        float depth = Mth.clamp((TINT_START_REMAINING - remaining) / TINT_START_REMAINING, 0.0F, 1.0F);
+        float depth = rotDepth(stack, config);
+        if (config.overlay()) {
+            if (tintIndex != OVERLAY_LAYER) return NO_TINT;   // 底层和其它层一律不动
+            return withAlpha(config.tint(), depth);           // depth 0 = 完全透明
+        }
+        if (tintIndex != BASE_LAYER) return NO_TINT;
         // 烂透了的颜色来自数据包（每条规则可配），所以"曲奇发霉是墨绿的、肉是暗红的"这种事
         // 不需要改代码。默认值见 SpoilageConfig.DEFAULT_TINT
         return lerpRgb(FRESH_COLOR, config.tint(), depth);
+    }
+
+    /**
+     * 腐烂深度 0~1：消耗掉 {@link #TINT_START_REMAINING} 之外的部分才开始算。
+     *
+     * <p>用惰性推算而不是组件里存的值 —— 背包不再定时结算，存的值可能落后。
+     * 倍率按物品取（容器里的和背包里的可能是两个倍率），必须和 tooltip 走同一个函数，
+     * 否则颜色和数字会对不上。这里用的是带小数的版本，颜色才是平滑渐变而不是一跳一跳。
+     */
+    private static float rotDepth(ItemStack stack, SpoilageConfig config) {
+        SpoilageData data = stack.get(Shelflife.SPOILAGE.get());
+        if (data == null || data.maxSpoilage() <= 0) return 0.0F;
+
+        Level level = Minecraft.getInstance().level;
+        if (level == null) return 0.0F;
+
+        double consumed = SpoilageSettlement.effectiveFractional(data, config,
+                ClientEnvironmentCache.rateFor(stack), level.getGameTime());
+        float remaining = 1.0F - (float) (consumed / data.maxSpoilage());
+        if (remaining >= TINT_START_REMAINING) return 0.0F;
+
+        return Mth.clamp((TINT_START_REMAINING - remaining) / TINT_START_REMAINING, 0.0F, 1.0F);
+    }
+
+    /**
+     * 把颜色换成指定 alpha（0 = 全透明，1 = 原样）。
+     *
+     * <p>这正是当初那个"物品整个隐形"的坑的另一面：alpha 会被原版写进顶点，
+     * 所以它既能毁掉一个物品，也能用来做淡入 —— 叠加层要的就是后者。
+     */
+    private static int withAlpha(int color, float alpha) {
+        int a = Mth.clamp((int) (alpha * 255.0F), 0, 255);
+        return (a << 24) | (color & 0x00FFFFFF);
     }
 
     private static int lerpRgb(int from, int to, float t) {

@@ -170,6 +170,35 @@ MOLDY_COOKIE_ROWS = [
     "................",
 ]
 
+# ---------------------------------------------------------------- 霉斑叠加层（占位图）
+# **这是一张叠加层**：只有零星霉斑是实心的，其余全透明。
+# 颜色特意画成**灰阶**而不是绿色 —— 真正的颜色由数据包的 tint 决定（见 overlay 规则），
+# 这样同一张图配不同 tint 就能用在不同的食物上。
+MOLD_OVERLAY_PALETTE = {
+    "H": (0xFF, 0xFF, 0xFF, 0xFF),  # 最亮
+    "M": (0xCC, 0xCC, 0xCC, 0xFF),  # 中间调
+    "d": (0x99, 0x99, 0x99, 0xFF),  # 暗部
+}
+
+MOLD_OVERLAY_ROWS = [
+    "................",
+    "................",
+    "......H.........",
+    ".....HMH...M....",
+    "......H...MHM...",
+    "..........d.....",
+    "..M.............",
+    ".MHM....HMH.....",
+    "..d......M......",
+    "........H.......",
+    "....M...MHM.....",
+    "...MHM...d......",
+    "....d...........",
+    "................",
+    "................",
+    "................",
+]
+
 # ---------------------------------------------------------------- 冷箱（方块贴图）
 # 木框 + 木板 + 一道冰蓝腰线。方块贴图必须全部不透明，所以这里没有 '.'。
 BLOCK_OUT_DIR = Path(__file__).resolve().parent.parent / "src/main/resources/assets/shelflife/textures/block"
@@ -227,6 +256,7 @@ def main() -> None:
     # 资源目录里那两张是手绘的，这个脚本生成的是另一版（见文件头的说明）。
     force = "--force" in sys.argv
     write_png(OUT_DIR / "moldy_cookie.png", MOLDY_COOKIE_ROWS, MOLDY_COOKIE_PALETTE, force)
+    write_png(OUT_DIR / "mold_overlay.png", MOLD_OVERLAY_ROWS, MOLD_OVERLAY_PALETTE, force)
     write_png(BLOCK_OUT_DIR / "cold_box_side.png", COLD_BOX_SIDE_ROWS, COLD_BOX_PALETTE, force)
     write_png(BLOCK_OUT_DIR / "cold_box_top.png", COLD_BOX_TOP_ROWS, COLD_BOX_PALETTE, force)
     write_png(BLOCK_OUT_DIR / "cold_box_bottom.png", COLD_BOX_BOTTOM_ROWS, COLD_BOX_PALETTE, force)

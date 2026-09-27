@@ -18,11 +18,15 @@ import org.slf4j.shelflife.Shelflife;
  *               想显式关闭转化就写 {@code "minecraft:air"}
  * @param tint   保质期<b>耗尽时</b>的染色（{@code #RRGGBB}）。显示层从"新鲜"到它线性插值
  *               （见 {@code SpoilageTintHandler}）。不写就用 {@link #DEFAULT_TINT}
+ * @param overlay {@code true} 表示这个物品的模型有**第二层**（霉斑叠加层），
+ *                走"底层不染 + 叠加层按 alpha 淡入"的路子，而不是整块乘性染色。
+ *                需要物品模型里写上 {@code layer1} 配合，见 {@code SpoilageTintHandler} 的注释
  *
- * <p><b>染色是乘性的</b>，只能压暗/偏色、不能变亮 —— 所以它表达"发霉发暗"很好用，
- * 但别指望用浅色把暗贴图提亮。
+ * <p><b>整块染色是乘性的</b>，只能压暗/偏色、不能变亮 —— 所以"让发霉的曲奇保持亮褐色、
+ * 只长出绿霉"是做不到的，那需要 {@code overlay}。
  */
-public record SpoilageConfig(int maxSpoilage, int ticksPerSpoilage, ResourceLocation result, int tint) {
+public record SpoilageConfig(int maxSpoilage, int ticksPerSpoilage, ResourceLocation result, int tint,
+                             boolean overlay) {
 
     /**
      * {@code result} 缺省时的产物。
@@ -62,6 +66,7 @@ public record SpoilageConfig(int maxSpoilage, int ticksPerSpoilage, ResourceLoca
             ByteBufCodecs.VAR_INT, SpoilageConfig::ticksPerSpoilage,
             ResourceLocation.STREAM_CODEC, SpoilageConfig::result,
             ByteBufCodecs.INT, SpoilageConfig::tint,
+            ByteBufCodecs.BOOL, SpoilageConfig::overlay,
             SpoilageConfig::new
     );
 }
