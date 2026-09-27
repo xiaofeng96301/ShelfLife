@@ -1,0 +1,10 @@
+{
+  "values": {
+    "shelflife:rotten_leftovers": {
+      "chance": 0.5
+    },
+    "shelflife:rotten_meat": {
+      "chance": 0.5
+    }
+  }
+}

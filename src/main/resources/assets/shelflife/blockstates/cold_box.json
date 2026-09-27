@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "shelflife:block/cold_box"
+    }
+  }
+}

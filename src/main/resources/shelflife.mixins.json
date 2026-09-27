@@ -1,0 +1,22 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "org.slf4j.shelflife.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "AbstractContainerMenuMixin",
+    "HopperBlockEntityMixin",
+    "InventoryMixin",
+    "ItemEntityMixin",
+    "SimpleContainerMixin",
+    "SlotMixin"
+  ],
+  "client": [
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "overwrites": {
+    "requireAnnotations": true
+  }
+}
