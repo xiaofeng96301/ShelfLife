@@ -8,6 +8,7 @@ import net.minecraft.tags.TagKey;
 import net.minecraft.world.level.block.Block;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
+import org.slf4j.shelflife.logic.CreateishotCompat;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -38,7 +39,12 @@ public final class EnvironmentManager {
 
     /** 第一段：数据包 reload，纯 JSON。 */
     public static void setRaw(@Nullable EnvironmentSettings newSettings, Map<String, ContainerModifier> containers) {
-        if (newSettings != null) settings = newSettings;
+        if (newSettings != null) {
+            // 在这里把 auto 落到具体来源上，之后（包括同步给客户端的）永远是解析过的值。
+            // 放在这里而不是查询时，是因为客户端也会跑这套代码 —— 让它按自己的模组列表解析，
+            // 没装 createishot 的客户端就会显示和服务端不一样的倍率。
+            settings = newSettings.resolved(CreateishotCompat.isLoaded());
+        }
         List<Map.Entry<String, ContainerModifier>> sorted = new ArrayList<>(containers.entrySet());
         sorted.sort(Map.Entry.comparingByKey());
         rawContainers = List.copyOf(sorted);

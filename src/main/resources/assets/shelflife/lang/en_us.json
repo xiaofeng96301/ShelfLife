@@ -2,14 +2,19 @@
   "itemGroup.shelflife": "ShelfLife",
   "block.shelflife.cold_box": "Cold Box",
   "container.shelflife.cold_box": "Cold Box",
-  "tooltip.shelflife.life.hours": "Shelf life: %s h %s min",
-  "tooltip.shelflife.life.minutes": "Shelf life: %s min %s s",
+  "tooltip.shelflife.life.hours.minutes.seconds": "Shelf life: %s h %s min %s s",
+  "tooltip.shelflife.life.minutes.seconds": "Shelf life: %s min %s s",
   "tooltip.shelflife.life.seconds": "Shelf life: %s s",
+  "tooltip.shelflife.life.hours.minutes": "Shelf life: %s h %s min",
+  "tooltip.shelflife.life.minutes": "Shelf life: %s min",
+  "tooltip.shelflife.life.under_minute": "Shelf life: <1 min",
   "tooltip.shelflife.spoiled": "Spoiled",
   "tooltip.shelflife.preserved": "Won't spoil",
   "tooltip.shelflife.rate": "Spoil multiplier ×%s",
   "tooltip.shelflife.formula.override": "rate_override = %s",
+  "tooltip.shelflife.formula.celsius": "node %s°C = equivalent %s",
   "tooltip.shelflife.formula.clamped": " (clamped to %s)",
   "item.shelflife.rotten_leftovers": "Rotten Leftovers",
-  "item.shelflife.rotten_meat": "Rotten Meat"
+  "item.shelflife.rotten_meat": "Rotten Meat",
+  "item.shelflife.moldy_cookie": "Moldy Cookie"
 }

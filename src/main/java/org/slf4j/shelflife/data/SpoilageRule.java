@@ -36,39 +36,44 @@ import java.util.Optional;
 public record SpoilageRule(List<Entry> entries) {
 
     /** 一个物品引用（具体 id 或 {@code #标签}）加它自己完整的数值。 */
-    public record Entry(String itemRef, int maxSpoilage, int ticksPerSpoilage, ResourceLocation result) {
+    public record Entry(String itemRef, int maxSpoilage, int ticksPerSpoilage, ResourceLocation result, int tint) {
     }
 
     // ------------------------------------------------------------------ 形态一
 
-    public record ItemList(List<String> items, int maxSpoilage, int ticksPerSpoilage, ResourceLocation result) {
+    public record ItemList(List<String> items, int maxSpoilage, int ticksPerSpoilage,
+                           ResourceLocation result, int tint) {
         static final Codec<ItemList> CODEC = RecordCodecBuilder.create(instance -> instance.group(
                 Codec.STRING.listOf().fieldOf("items").forGetter(ItemList::items),
                 Codec.intRange(1, Integer.MAX_VALUE).fieldOf("max_spoilage").forGetter(ItemList::maxSpoilage),
                 Codec.intRange(1, Integer.MAX_VALUE).fieldOf("ticks_per_spoilage").forGetter(ItemList::ticksPerSpoilage),
-                ResourceLocation.CODEC.optionalFieldOf("result", SpoilageConfig.DEFAULT_RESULT).forGetter(ItemList::result)
+                ResourceLocation.CODEC.optionalFieldOf("result", SpoilageConfig.DEFAULT_RESULT).forGetter(ItemList::result),
+                SpoilageConfig.TINT_CODEC.optionalFieldOf("tint", SpoilageConfig.DEFAULT_TINT).forGetter(ItemList::tint)
         ).apply(instance, ItemList::new));
     }
 
     // ------------------------------------------------------------------ 形态二
 
     public record ItemMap(Optional<Integer> maxSpoilage, Optional<Integer> ticksPerSpoilage,
-                          Optional<ResourceLocation> result, Map<String, Patch> items) {
+                          Optional<ResourceLocation> result, Optional<Integer> tint,
+                          Map<String, Patch> items) {
         static final Codec<ItemMap> CODEC = RecordCodecBuilder.create(instance -> instance.group(
                 Codec.intRange(1, Integer.MAX_VALUE).optionalFieldOf("max_spoilage").forGetter(ItemMap::maxSpoilage),
                 Codec.intRange(1, Integer.MAX_VALUE).optionalFieldOf("ticks_per_spoilage").forGetter(ItemMap::ticksPerSpoilage),
                 ResourceLocation.CODEC.optionalFieldOf("result").forGetter(ItemMap::result),
+                SpoilageConfig.TINT_CODEC.optionalFieldOf("tint").forGetter(ItemMap::tint),
                 Codec.unboundedMap(Codec.STRING, Patch.CODEC).fieldOf("items").forGetter(ItemMap::items)
         ).apply(instance, ItemMap::new));
     }
 
-    /** 单个物品对顶层默认值的覆盖，三个字段都可以不写。 */
+    /** 单个物品对顶层默认值的覆盖，四个字段都可以不写。 */
     public record Patch(Optional<Integer> maxSpoilage, Optional<Integer> ticksPerSpoilage,
-                        Optional<ResourceLocation> result) {
+                        Optional<ResourceLocation> result, Optional<Integer> tint) {
         static final Codec<Patch> CODEC = RecordCodecBuilder.create(instance -> instance.group(
                 Codec.intRange(1, Integer.MAX_VALUE).optionalFieldOf("max_spoilage").forGetter(Patch::maxSpoilage),
                 Codec.intRange(1, Integer.MAX_VALUE).optionalFieldOf("ticks_per_spoilage").forGetter(Patch::ticksPerSpoilage),
-                ResourceLocation.CODEC.optionalFieldOf("result").forGetter(Patch::result)
+                ResourceLocation.CODEC.optionalFieldOf("result").forGetter(Patch::result),
+                SpoilageConfig.TINT_CODEC.optionalFieldOf("tint").forGetter(Patch::tint)
         ).apply(instance, Patch::new));
     }
 
@@ -87,7 +92,7 @@ public record SpoilageRule(List<Entry> entries) {
         if (either.left().isPresent()) {
             ItemList list = either.left().get();
             return DataResult.success(new SpoilageRule(list.items().stream()
-                    .map(ref -> new Entry(ref, list.maxSpoilage(), list.ticksPerSpoilage(), list.result()))
+                    .map(ref -> new Entry(ref, list.maxSpoilage(), list.ticksPerSpoilage(), list.result(), list.tint()))
                     .toList()));
         }
         return fromMap(either.right().orElseThrow());
@@ -104,7 +109,8 @@ public record SpoilageRule(List<Entry> entries) {
                         + " 既没有自己的 max_spoilage / ticks_per_spoilage，顶层也没给默认值");
             }
             ResourceLocation result = patch.result().or(map::result).orElse(SpoilageConfig.DEFAULT_RESULT);
-            entries.add(new Entry(item.getKey(), max.get(), ticks.get(), result));
+            int tint = patch.tint().or(map::tint).orElse(SpoilageConfig.DEFAULT_TINT);
+            entries.add(new Entry(item.getKey(), max.get(), ticks.get(), result, tint));
         }
         return DataResult.success(new SpoilageRule(List.copyOf(entries)));
     }
@@ -115,8 +121,9 @@ public record SpoilageRule(List<Entry> entries) {
             items.put(entry.itemRef(), new Patch(
                     Optional.of(entry.maxSpoilage()),
                     Optional.of(entry.ticksPerSpoilage()),
-                    Optional.of(entry.result())));
+                    Optional.of(entry.result()),
+                    Optional.of(entry.tint())));
         }
-        return new ItemMap(Optional.empty(), Optional.empty(), Optional.empty(), items);
+        return new ItemMap(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), items);
     }
 }

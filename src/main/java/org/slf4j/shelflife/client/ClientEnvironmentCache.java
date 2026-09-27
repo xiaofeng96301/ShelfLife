@@ -11,6 +11,8 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import org.slf4j.shelflife.Shelflife;
+import org.slf4j.shelflife.data.EnvironmentManager;
+import org.slf4j.shelflife.data.TemperatureSource;
 import org.slf4j.shelflife.logic.EnvironmentSample;
 import org.slf4j.shelflife.logic.EnvironmentSampler;
 
@@ -24,13 +26,13 @@ import java.util.Set;
  * <p>tooltip 和染色都要用它，但两者都在渲染路径上、一帧会调用很多次，而每次采样要做群系查询 ——
  * 所以每 tick 算一次存起来，渲染时直接读。
  *
- * <p><b>环境是分物品的，不是一个全局值</b>，这是这个类存在的意义：
+ * <p><b>环境是分物品的，不是一个全局值</b>：
  * <ul>
- *   <li><b>容器里的物品</b> —— 用服务端发来的那次采样。客户端自己反查不到容器位置
- *       （客户端侧 {@code ChestMenu} 装的是 {@code SimpleContainer}，不是方块实体），
- *       也拿不到数据包给那个方块写的冷源修正。</li>
- *   <li><b>其它所有物品</b>（玩家背包、手上、地上）—— 用玩家所在位置采样。
- *       同一份食物在容器里和在背包里是两个不同的倍率，混用会让显示和实际对不上。</li>
+ *   <li><b>容器里的物品</b> —— 用服务端发来的那次采样（{@code ContainerRatePayload}）。
+ *       客户端自己反查不到容器位置（客户端侧 {@code ChestMenu} 装的是 {@code SimpleContainer}，
+ *       不是方块实体），也拿不到数据包给那个方块写的修正。</li>
+ *   <li><b>玩家自己周围的物品</b> —— 摄氏模式下也只能用服务端下发的（{@code PlayerEnvironmentPayload}），
+ *       因为 createishot 的温度是服务端权威的；群系模式下本地按群系采样就是准的。</li>
  * </ul>
  *
  * <p><b>怎么区分"在容器里"：</b>把当前菜单里不属于玩家背包的槽位上的 {@code ItemStack}
@@ -40,9 +42,13 @@ import java.util.Set;
 @EventBusSubscriber(modid = Shelflife.MODID, value = Dist.CLIENT)
 public final class ClientEnvironmentCache {
 
-    /** 没有容器打开时（或物品不在容器里时）用这个。 */
-    private static volatile EnvironmentSample ambient =
-            new EnvironmentSample(0.0F, 0.0F, 1.0F, EnvironmentSample.NO_OVERRIDE);
+    /** 没有容器打开、也没有服务端数据时用的兜底值（全新、不变快慢）。 */
+    private static final EnvironmentSample FALLBACK = EnvironmentSample.ofBiome(0.0F, 0.0F, 1.0F);
+
+    private static volatile EnvironmentSample ambient = FALLBACK;
+
+    /** 服务端下发的玩家环境。摄氏模式才会有；换回群系模式后会被清掉。 */
+    private static volatile EnvironmentSample fromServer = null;
 
     /** 服务端告知的容器采样，以及它属于哪个菜单。{@code -1} 表示当前没有有效的容器数据。 */
     private static volatile int containerRateId = -1;
@@ -58,12 +64,26 @@ public final class ClientEnvironmentCache {
     public static void onClientTick(ClientTickEvent.Post event) {
         LocalPlayer player = Minecraft.getInstance().player;
         if (player == null) {
-            ambient = new EnvironmentSample(0.0F, 0.0F, 1.0F, EnvironmentSample.NO_OVERRIDE);
+            ambient = FALLBACK;
+            fromServer = null;
             clearContainer();
             return;
         }
 
-        ambient = EnvironmentSampler.sampleAt(player.level(), player.blockPosition(), null);
+        // 是否采用服务端的值，看的是**同步过来的** source，而不是本地的 ModList ——
+        // 没装 createishot 的客户端连装了它的服务器时，两边必须得出同一个倍率；
+        // 若按 ModList 判断，这种客户端会走群系分支，显示和服务端结算对不上。
+        EnvironmentSample server = null;
+        if (EnvironmentManager.settings().source() == TemperatureSource.CREATEISHOT) {
+            server = fromServer;
+        } else {
+            fromServer = null;   // 换回群系模式后别留着上一局的服务端值
+        }
+
+        // 服务端的值还没送到时先用本地群系值顶着（登录后那几 tick），到了立刻换成准确的
+        ambient = server != null
+                ? server
+                : EnvironmentSampler.sampleAt(player.level(), player.blockPosition(), null);
 
         AbstractContainerMenu menu = player.containerMenu;
         if (containerRateId >= 0 && menu != null && menu.containerId == containerRateId) {
@@ -75,10 +95,15 @@ public final class ClientEnvironmentCache {
         }
     }
 
-    /** 服务端在开箱时调用（见 {@code ContainerRatePayload}）。 */
+    /** 服务端在开箱时、以及容器倍率变化时调用（见 {@code ContainerRatePayload}）。 */
     public static void acceptContainerSample(EnvironmentSample sample, int containerId) {
         containerSample = sample;
         containerRateId = containerId;
+    }
+
+    /** 服务端在玩家环境变化时调用（见 {@code PlayerEnvironmentPayload}）。 */
+    public static void acceptPlayerSample(EnvironmentSample sample) {
+        fromServer = sample;
     }
 
     /**
@@ -99,12 +124,12 @@ public final class ClientEnvironmentCache {
         return sampleFor(stack).rate();
     }
 
-    /** 收集容器侧的物品堆。判定方式和 {@code SpoilageEvents.onContainerOpen} 完全一致。 */
+    /** 收集容器侧的物品堆。判定方式和 {@code SpoilageEvents.settleMenu} 完全一致。 */
     private static Set<ItemStack> collectContainerStacks(LocalPlayer player, AbstractContainerMenu menu) {
         Inventory playerInventory = player.getInventory();
         Set<ItemStack> stacks = Collections.newSetFromMap(new IdentityHashMap<>());
         for (Slot slot : menu.slots) {
-            // 玩家自己的格子用环境采样 —— 这正是"开箱子时身上食物不跟着变"的实现点
+            // 玩家自己的格子用玩家环境 —— 这正是"开箱子时身上食物不跟着变"的实现点
             if (slot.container == playerInventory) continue;
             ItemStack stack = slot.getItem();
             if (!stack.isEmpty()) stacks.add(stack);

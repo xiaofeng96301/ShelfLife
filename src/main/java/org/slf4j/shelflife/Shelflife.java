@@ -76,12 +76,15 @@ public class Shelflife {
             BLOCK_ENTITIES.register("cold_box",
                     () -> BlockEntityType.Builder.of(ColdBoxBlockEntity::new, COLD_BOX.get()).build(null));
 
-    // 保质期耗尽后的产物。这两个物品本身**没有**保质期 —— 它们不在任何数据包规则里，
+    // 保质期耗尽后的产物。这几个物品本身**没有**保质期 —— 它们不在任何数据包规则里，
     // 所以配置表查不到、不打戳、不腐烂，也就不会有 tooltip。
     public static final DeferredItem<Item> ROTTEN_LEFTOVERS =
             ITEMS.registerSimpleItem("rotten_leftovers", new Item.Properties().food(rottenFood()));
     public static final DeferredItem<Item> ROTTEN_MEAT =
             ITEMS.registerSimpleItem("rotten_meat", new Item.Properties().food(rottenFood()));
+    /** 曲奇的产物。在数据包里挂到 {@code minecraft:cookie} 上（见 vanilla_foods.json）。 */
+    public static final DeferredItem<Item> MOLDY_COOKIE =
+            ITEMS.registerSimpleItem("moldy_cookie", new Item.Properties().food(rottenFood()));
 
     /**
      * 吃下腐烂食物的代价：饥饿 amplifier 2、反胃 amplifier 3，各 30 秒，100% 触发。

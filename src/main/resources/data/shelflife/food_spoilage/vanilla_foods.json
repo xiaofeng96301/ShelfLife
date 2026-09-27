@@ -34,7 +34,7 @@
     "minecraft:beetroot": { "ticks_per_spoilage": 1680 },
     "minecraft:chorus_fruit": { "ticks_per_spoilage": 1680 },
     "minecraft:potato": { "ticks_per_spoilage": 2520 },
-    "minecraft:cookie": { "ticks_per_spoilage": 3600 },
+    "minecraft:cookie": { "ticks_per_spoilage": 3600, "result": "shelflife:moldy_cookie", "tint": "#46c49a" },
     "minecraft:dried_kelp": { "ticks_per_spoilage": 43800 }
   }
 }

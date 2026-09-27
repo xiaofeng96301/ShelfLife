@@ -46,9 +46,6 @@ public final class SpoilageTintHandler {
      */
     private static final int FRESH_COLOR = 0xFFFFFFFF;
 
-    /** 保质期耗尽时的颜色：偏绿的中性色，乘上去把食物压暗发绿。改这个值就能调"烂成什么样"。 */
-    private static final int ROTTEN_COLOR = 0xFF7E8C4A;
-
     /** 由 {@link #onRegisterItemColors} 存下来，供配置表变动时补登记。 */
     private static ItemColors itemColors;
 
@@ -90,13 +87,17 @@ public final class SpoilageTintHandler {
 
         // 用惰性推算而不是组件里存的值 —— 背包不再定时结算，存的值可能落后。
         // 倍率按物品取（容器里的物品和玩家背包里的物品可能不是同一个倍率），
-        // 必须和 tooltip 走同一个函数，否则颜色和数字会对不上
-        int consumed = SpoilageSettlement.effective(data, config, ClientEnvironmentCache.rateFor(stack), level.getGameTime());
-        float remaining = 1.0F - (float) consumed / data.maxSpoilage();
+        // 必须和 tooltip 走同一个函数，否则颜色和数字会对不上。
+        // 这里也用带小数的版本，颜色才是平滑渐变而不是一跳一跳
+        double consumed = SpoilageSettlement.effectiveFractional(data, config,
+                ClientEnvironmentCache.rateFor(stack), level.getGameTime());
+        float remaining = 1.0F - (float) (consumed / data.maxSpoilage());
         if (remaining >= TINT_START_REMAINING) return FRESH_COLOR;
 
         float depth = Mth.clamp((TINT_START_REMAINING - remaining) / TINT_START_REMAINING, 0.0F, 1.0F);
-        return lerpRgb(FRESH_COLOR, ROTTEN_COLOR, depth);
+        // 烂透了的颜色来自数据包（每条规则可配），所以"曲奇发霉是墨绿的、肉是暗红的"这种事
+        // 不需要改代码。默认值见 SpoilageConfig.DEFAULT_TINT
+        return lerpRgb(FRESH_COLOR, config.tint(), depth);
     }
 
     private static int lerpRgb(int from, int to, float t) {

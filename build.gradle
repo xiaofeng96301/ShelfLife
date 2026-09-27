@@ -10,6 +10,34 @@ group = mod_group_id
 
 repositories {
     mavenLocal()
+    mavenCentral()
+    maven {
+        // location of the maven that hosts JEI files since January 2023
+        name = "Jared's maven"
+        url = "https://maven.blamejared.com/"
+    }
+    maven {
+        // location of a maven mirror for JEI files, as a fallback
+        name = "ModMaven"
+        url = "https://modmaven.dev"
+    }
+    maven { url = "https://maven.firstdark.dev/snapshots" }
+    maven { url = uri("${projectDir}/maven-local") }
+    maven { url = "https://maven.createmod.net" } // Ponder, Flywheel
+    maven { url = "https://maven.ithundxr.dev/snapshots" } // Registrate
+
+    maven { // For Veil
+        name = 'BlameJared Maven (CrT / Bookshelf)'
+        url = 'https://maven.blamejared.com'
+    }
+    maven {
+        url = "https://maven.ryanhcode.dev/releases"
+        name = "RyanHCode Maven"
+    }
+    maven {
+        name = "Illusive Soulworks maven"
+        url = "https://maven.theillusivec4.top/"
+    }
 }
 
 base {
@@ -96,26 +124,56 @@ sourceSets.main.resources { srcDir 'src/generated/resources' }
 
 
 dependencies {
-    // Example mod dependency with JEI
-    // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
-    // compileOnly "mezz.jei:jei-${mc_version}-common-api:${jei_version}"
-    // compileOnly "mezz.jei:jei-${mc_version}-forge-api:${jei_version}"
-    // runtimeOnly "mezz.jei:jei-${mc_version}-forge:${jei_version}"
+    //本地mcp运行环境
+    implementation('io.github.uicdb:mmccpp:1.0.0') { transitive = false }
+    //航空学
+    implementation("dev.ryanhcode.sable:sable-neoforge-${minecraft_version}:${sable_version}") { transitive = false }
+    implementation("dev.ryanhcode.sable-companion:sable-companion-common-${minecraft_version}:${sable_companion_version}") { transitive = false }
+    implementation("dev.simulated_team.simulated:simulated-neoforge-${minecraft_version}:${simulated_version}") { transitive = false }
+    implementation("foundry.veil:veil-neoforge-${minecraft_version}:${veil_version}") { transitive = false }
+    implementation("dev.eriksonn.aeronautics:aeronautics-neoforge-${minecraft_version}:${aeronautics_version}") { transitive = false }
+    implementation("foundry.imguimc:imguimc-neoforge-${minecraft_version}:${imguimc_version}") { transitive = false }
 
-    // Example mod dependency using a mod jar from ./libs with a flat dir repository
-    // This maps to ./libs/coolmod-${mc_version}-${coolmod_version}.jar
-    // The group id is ignored when searching -- in this case, it is "blank"
-    // implementation "blank:coolmod-${mc_version}:${coolmod_version}"
+    implementation("com.simibubi.create:create-$minecraft_version:$create_version") { transitive = false }//机械动力
 
-    // Example mod dependency using a file as dependency
-    // implementation files("libs/coolmod-${mc_version}-${coolmod_version}.jar")
+    // ---- 以下只进编译 / 开发环境，运行期由上面某个依赖自带 ----
+    implementation 'org.projectlombok:lombok:+'
+    annotationProcessor 'org.projectlombok:lombok:+'
+    //注册库（不是 mod，create 运行期自带，这里只给编译用）
+    jarJar(compileOnly("com.tterrag.registrate:Registrate:$registrate_version"))
+    //飞轮（这里只有 API；真正的 Flywheel 由 create 内嵌，别再单独分发一份）
+    implementation("dev.engine-room.flywheel:flywheel-neoforge-api-$minecraft_version:$flywheel_version")
+    //思索（同上，create 内嵌了 ponder）
+    implementation("net.createmod.ponder:ponder-neoforge:$ponder_version+mc$minecraft_version") {
+        version {
+            strictly "[$ponder_version+mc$minecraft_version,)"
+            prefer "$ponder_version+mc$minecraft_version"
+            transitive = false
+        }
+    }
+    // Compile against only the API artifact
+    compileOnly "top.theillusivec4.curios:curios-neoforge:${curios_version}:api"
+    // Use the full Curios API jar at runtime
+    runtimeOnly "top.theillusivec4.curios:curios-neoforge:${curios_version}"
+    //jei
+    compileOnly("mezz.jei:jei-${minecraft_version}-neoforge-api:${jei_version}")
+    // createishot（可选依赖）：编译期要看到它的 API，所以 jar 提交在 libs/ 里 ——
+    // 放在 run/mods 的话 run/ 被 gitignore，换台机器就编译不过。
+    // 不用 exists() 包起来是故意的：jar 缺了就该编译失败，而不是留下一个难查的 NoClassDefFoundError。
+    // 走和 Curios 一样的路子：compileOnly 供编译，runtimeOnly 只进开发运行期，都不会打进发布包。
+    compileOnly files('libs/createishot-1.0-SNAPSHOT.jar')
+    runtimeOnly files('libs/createishot-1.0-SNAPSHOT.jar')
 
-    // Example project dependency using a sister or child project:
-    // implementation project(":myproject")
-
-    // For more info:
-    // http://www.gradle.org/docs/current/userguide/artifact_dependencies_tutorial.html
-    // http://www.gradle.org/docs/current/userguide/dependency_management.html
+    def runModsDir = file('run/mods')
+    if (runModsDir.exists() && runModsDir.listFiles()) {
+        def modFiles = fileTree(dir: runModsDir, include: '*.jar').matching {
+            exclude "${project.mod_id}*.jar",
+                    "jei-1.21.1-neoforge-19.39.0.368.jar"
+        }
+        if (!modFiles.isEmpty()) {
+            compileOnly modFiles
+        }
+    }
 }
 
 // This block of code expands all declared replace properties in the specified resource targets.

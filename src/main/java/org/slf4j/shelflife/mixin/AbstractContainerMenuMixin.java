@@ -3,6 +3,7 @@ package org.slf4j.shelflife.mixin;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.llamalad7.mixinextras.sugar.Local;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
@@ -82,5 +83,62 @@ public abstract class AbstractContainerMenuMixin {
             SpoilageMerge.averageBeforeMerge(carried, slotStack, amount);
         }
         return true;
+    }
+
+    /**
+     * 拖拽分配（按住左键拖过一串槽位）和双击收集（PICKUP_ALL）共用的那道门。
+     *
+     * <p>它是个静态方法、被调用的地方不止一处，所以放宽**必须加在这里**，加在调用点会漏。
+     * 本处只放宽判定 —— 真正的数值处理在下面两个包裹里，因为那两条路的合并方向与
+     * {@code moveItemStackTo} 不同，光开门会让玩家能"洗保质期"。
+     */
+    @WrapOperation(
+            method = "canItemQuickReplace(Lnet/minecraft/world/inventory/Slot;Lnet/minecraft/world/item/ItemStack;Z)Z",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/world/item/ItemStack;isSameItemSameComponents(Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/item/ItemStack;)Z"))
+    private static boolean shelflife$spoilageAwareQuickReplace(ItemStack carried, ItemStack slotStack,
+                                                               Operation<Boolean> original) {
+        if (original.call(carried, slotStack)) return true;
+        // 目标是槽位里那一堆（留下来的那个）
+        return SpoilageMerge.canStackTogether(slotStack, carried);
+    }
+
+    /**
+     * 拖拽分配：原版是 {@code slot.setByPlayer(dragSource.copyWithCount(n))} ——
+     * <b>把整个槽位替换成来源堆的副本</b>，根本不是合并。所以加权平均必须写进那个新堆，
+     * 写旧堆没有意义（紧接着就被丢掉了）。
+     *
+     * <p>ordinal 0 = 字节码里第一个 {@code setByPlayer}，也就是这一处（后面几个是 SWAP 用的）。
+     */
+    @WrapOperation(
+            method = "doClick(IILnet/minecraft/world/inventory/ClickType;Lnet/minecraft/world/entity/player/Player;)V",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/world/inventory/Slot;setByPlayer(Lnet/minecraft/world/item/ItemStack;)V", ordinal = 0))
+    private void shelflife$averageDragged(Slot slot, ItemStack placed, Operation<Void> original) {
+        ItemStack before = slot.getItem();   // 还没被写，是槽位里原有的那一堆
+        int added = placed.getCount() - before.getCount();
+        // 来源就是光标上那一堆：本次调用期间原版只动了它的副本，getCarried() 还是原件
+        ItemStack source = ((AbstractContainerMenu) (Object) this).getCarried();
+        SpoilageMerge.averageIntoReplacement(placed, before, source, added);
+        original.call(slot, placed);
+    }
+
+    /**
+     * 双击收集：物品并进<b>光标上那一堆</b>，方向和其它合并点相反。
+     * 在 {@code grow} 之前把平均值算好，后面那句 {@code carried.grow(...)} 就是正常累加。
+     *
+     * <p>ordinal 1 = 字节码里第二个 {@code safeTake}（第一个是 THROW 投掷用的，不参与合并）。
+     */
+    @WrapOperation(
+            method = "doClick(IILnet/minecraft/world/inventory/ClickType;Lnet/minecraft/world/entity/player/Player;)V",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/world/inventory/Slot;safeTake(IILnet/minecraft/world/entity/player/Player;)Lnet/minecraft/world/item/ItemStack;", ordinal = 1))
+    private ItemStack shelflife$averagePickedUp(Slot slot, int amount, int maxAmount, Player player,
+                                                Operation<ItemStack> original) {
+        ItemStack taken = original.call(slot, amount, maxAmount, player);
+        if (!taken.isEmpty()) {
+            ItemStack target = ((AbstractContainerMenu) (Object) this).getCarried();
+            if (SpoilageMerge.canStackTogether(target, taken)) {
+                SpoilageMerge.averageBeforeMerge(target, taken, taken.getCount());
+            }
+        }
+        return taken;
     }
 }

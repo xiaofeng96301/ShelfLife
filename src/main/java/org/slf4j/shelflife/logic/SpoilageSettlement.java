@@ -83,7 +83,20 @@ public final class SpoilageSettlement {
      * 客户端拿 {@code ClientEnvironmentCache.rateFor(ItemStack)}（按物品取 —— 容器里的和背包里的可能不同）。
      */
     public static int effective(@Nullable SpoilageData data, SpoilageConfig config, float rate, long now) {
-        if (data == null) return 0;
+        // 逻辑判断要的是"够不够一个整点"，直接截断即可
+        return (int) effectiveFractional(data, config, rate, now);
+    }
+
+    /**
+     * 同 {@link #effective}，但<b>保留小数</b>。给显示用。
+     *
+     * <p>{@link #effective} 返回整点是有意的：结算和"该不该转化"这些判断本来就以点为粒度。
+     * 但显示不能这样 —— {@code ticks_per_spoilage} 是 3600 的食物，攒够一个点要 3 分钟，
+     * 于是 tooltip 里的"秒"三分钟才动一格，看着像卡住了。
+     * （只显示到"分"的时候看不出来，精确到秒之后就成了明显的 bug。）
+     */
+    public static double effectiveFractional(@Nullable SpoilageData data, SpoilageConfig config, float rate, long now) {
+        if (data == null) return 0.0;
         // 时钟未开始（食物刚拿到、还没被任何结算事件碰到）—— 按全新算，否则会把游戏时间全算上
         if (data.storedTimestamp() == SpoilageData.NO_TIMESTAMP) return data.currentSpoilage();
         if (rate <= 0.0F) return data.currentSpoilage();   // 停腐期间不涨
@@ -92,9 +105,8 @@ public final class SpoilageSettlement {
         long elapsed = now - data.storedTimestamp();
         if (elapsed <= 0) return data.currentSpoilage();
 
-        long exposure = (long) (elapsed * (double) rate);
-        long points = exposure / config.ticksPerSpoilage();
-        return (int) Math.min(data.currentSpoilage() + points, data.maxSpoilage());
+        double points = elapsed * (double) rate / config.ticksPerSpoilage();
+        return Math.min(data.currentSpoilage() + points, data.maxSpoilage());
     }
 
     /**

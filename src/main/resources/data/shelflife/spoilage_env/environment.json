@@ -5,7 +5,9 @@
     "humidity_base": 0.75,
     "humidity_span": 0.5,
     "min_multiplier": 0.05,
-    "max_multiplier": 4.0
+    "max_multiplier": 4.0,
+    "temperature_source": "auto",
+    "celsius_curve": [[0.0, -30.0], [1.0, 25.0], [2.0, 40.0]]
   },
   "containers": {
     "minecraft:barrel": {

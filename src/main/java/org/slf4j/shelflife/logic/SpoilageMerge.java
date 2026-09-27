@@ -2,6 +2,7 @@ package org.slf4j.shelflife.logic;
 
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.world.item.ItemStack;
+import org.jetbrains.annotations.Nullable;
 import org.slf4j.shelflife.Shelflife;
 import org.slf4j.shelflife.component.SpoilageData;
 
@@ -63,16 +64,33 @@ public final class SpoilageMerge {
      * @param amount 即将并入的数量，不是 source 的总数 —— 目标堆可能只装得下一部分
      */
     public static void averageBeforeMerge(ItemStack target, ItemStack source, int amount) {
-        if (amount <= 0) return;
-
         DataComponentType<SpoilageData> type = Shelflife.SPOILAGE.get();
         SpoilageData targetData = target.get(type);
         if (targetData == null) return;   // 防御：不变量被破坏时宁可不写，也不能凭空造组件
-        SpoilageData sourceData = source.get(type);
 
-        int targetCount = target.getCount();
+        SpoilageData averaged = averaged(targetData, source.get(type), target.getCount(), amount);
+        if (averaged != null) {
+            target.set(type, averaged);
+        }
+    }
+
+    /**
+     * 算出加权平均后的数据，<b>不写任何东西</b>。
+     *
+     * <p>单独拆出来是因为有些合并点**不能往原堆上写**：拖拽分配走的是
+     * {@code slot.setByPlayer(dragSource.copyWithCount(n))} —— 槽位里原本那一堆会被整体<b>替换</b>掉，
+     * 所以平均值必须写进"将要写进去的那个新堆"里，而不是旧堆上。
+     *
+     * @param targetCount 目标堆合并前的数量（不是合并后的）
+     * @param amount      即将并入的数量，不是 source 的总数 —— 目标堆可能只装得下一部分
+     * @return {@code targetData} 为 null 或参数不合法时原样返回
+     */
+    @Nullable
+    public static SpoilageData averaged(SpoilageData targetData, @Nullable SpoilageData sourceData,
+                                        int targetCount, int amount) {
+        if (targetData == null || amount <= 0) return targetData;
         int mergedCount = targetCount + amount;
-        if (mergedCount <= 0) return;
+        if (mergedCount <= 0) return targetData;
 
         int targetSpoilage = targetData.currentSpoilage();
         int sourceSpoilage = sourceData != null ? sourceData.currentSpoilage() : 0;
@@ -81,7 +99,29 @@ public final class SpoilageMerge {
         // 时间戳沿用 target 的：合并点里拿不到 Level，也就算不出"当前时间"。
         // 好在容器里的物品每次开箱都会被统一打戳，所以同容器内合并时两边时间戳本来就相同，这个选择是精确的；
         // 反而若把时间戳清成"未定"，下次结算会当作全新物品，把两次开箱之间的那段时间整个跳过。
-        target.set(type, new SpoilageData((int) (weighted / mergedCount), targetData.maxSpoilage(),
-                targetData.storedTimestamp()));
+        return new SpoilageData((int) (weighted / mergedCount), targetData.maxSpoilage(),
+                targetData.storedTimestamp());
+    }
+
+    /**
+     * 拖拽分配专用：把加权平均写进那个**即将覆盖槽位**的新堆。
+     *
+     * <p>{@code replacement} 是原版刚 {@code copyWithCount} 出来的新对象，独占、可以随便改。
+     * 判定用 {@code replacement}（它就是来源堆的副本）当 source、槽位里原有的那一堆当 target ——
+     * 和别的合并点一致：留下来的那个才是 target。
+     *
+     * @param added 这次实际放进去的数量（= 新堆数量 − 槽位原有数量），≤ 0 时什么都不做
+     */
+    public static void averageIntoReplacement(ItemStack replacement, ItemStack targetBefore,
+                                              ItemStack source, int added) {
+        if (added <= 0) return;
+        if (!canStackTogether(targetBefore, source)) return;
+
+        DataComponentType<SpoilageData> type = Shelflife.SPOILAGE.get();
+        SpoilageData averaged = averaged(targetBefore.get(type), source.get(type),
+                targetBefore.getCount(), added);
+        if (averaged != null) {
+            replacement.set(type, averaged);
+        }
     }
 }

@@ -2,14 +2,19 @@
   "itemGroup.shelflife": "保质期",
   "block.shelflife.cold_box": "测试冷箱",
   "container.shelflife.cold_box": "测试用冷箱",
-  "tooltip.shelflife.life.hours": "保质期: %s小时%s分",
-  "tooltip.shelflife.life.minutes": "保质期: %s分%s秒",
+  "tooltip.shelflife.life.hours.minutes.seconds": "保质期: %s小时%s分%s秒",
+  "tooltip.shelflife.life.minutes.seconds": "保质期: %s分%s秒",
   "tooltip.shelflife.life.seconds": "保质期: %s秒",
+  "tooltip.shelflife.life.hours.minutes": "保质期: %s小时%s分",
+  "tooltip.shelflife.life.minutes": "保质期: %s分",
+  "tooltip.shelflife.life.under_minute": "保质期: <1分",
   "tooltip.shelflife.spoiled": "已腐烂",
   "tooltip.shelflife.preserved": "不会腐烂",
   "tooltip.shelflife.rate": "腐烂倍率 ×%s",
   "tooltip.shelflife.formula.override": "rate_override 直接指定 = %s",
+  "tooltip.shelflife.formula.celsius": "节点温度 %s°C = 等效温度 %s",
   "tooltip.shelflife.formula.clamped": "（上下限 %s）",
   "item.shelflife.rotten_leftovers": "腐烂剩菜",
-  "item.shelflife.rotten_meat": "腐烂肉类"
+  "item.shelflife.rotten_meat": "腐烂肉类",
+  "item.shelflife.moldy_cookie": "发霉曲奇"
 }

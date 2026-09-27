@@ -72,6 +72,23 @@ ShelfLife 的全部数值都在数据包里。这份文档是给**要在别的�
 | `max_spoilage` | ✅ | 保质期总量，单位是抽象的"点"。写 100 就是"分 100 步烂完" |
 | `ticks_per_spoilage` | ✅ | 每消耗 1 点需要的游戏刻（20 刻 = 1 秒） |
 | `result` | ❌ | 烂完变成什么。默认 `shelflife:rotten_leftovers`；写 `minecraft:air` = **不转化**，只是烂在手里 |
+| `tint` | ❌ | 烂透时的染色，`#RRGGBB`。默认 `#7E8C4A`（发暗的橄榄绿） |
+
+`tint` 的几点说明：
+
+- 显示层从"新鲜"到它是**线性插值**的：消耗掉 40% 保质期后开始变色，最后 60% 里逐渐加深
+- **染色是乘性的**，只能压暗/偏色，不能提亮 —— 想表达"发霉"很好用（给个绿），
+  想用浅色把暗贴图提亮是做不到的
+- **想偏成某个色，tint 的通道比要压过底图的通道比。** 例：曲奇主色 `#8B5A2B` 的红是绿的
+  1.54 倍，那 tint 的绿/红就得**大于** 1.54 才看得出来。`#6aa392` 恰好等于 1.54，
+  乘完红绿一样大，出来是灰的；`#46c49a` 是 2.8，才是绿的。
+  挑颜色前先把底图主色取出来算一下，能省一轮试错
+- **alpha 固定 FF**，所以只收六位。八位会有 ARGB/RGBA 两种理解，而且 alpha 写成 0 的后果
+  是"整个物品隐形"（原版会把染色的 alpha 直接写进顶点），干脆不让写
+- 想要"曲奇发霉是墨绿的、肉是暗红的"，就是给不同规则写不同的 `tint`：
+  ```json
+  "minecraft:cookie": { "ticks_per_spoilage": 3600, "result": "shelflife:moldy_cookie", "tint": "#46c49a" }
+  ```
 
 两个数值都必须 **≥ 1**（`ticks_per_spoilage` 为 0 会导致结算时除零）。
 
@@ -140,7 +157,9 @@ ShelfLife 的全部数值都在数据包里。这份文档是给**要在别的�
     "humidity_base": 0.75,
     "humidity_span": 0.5,
     "min_multiplier": 0.05,
-    "max_multiplier": 4.0
+    "max_multiplier": 4.0,
+    "temperature_source": "auto",
+    "celsius_curve": [[0.0, -30.0], [1.0, 25.0], [2.0, 40.0]]
   },
   "containers": {
     "minecraft:barrel":    { "temperature": -0.1 },
@@ -151,6 +170,12 @@ ShelfLife 的全部数值都在数据包里。这份文档是给**要在别的�
 ```
 
 两节都可以省略。多个文件同样按 id 排序、后者覆盖前者。
+
+> **`settings` 是整块覆盖，不是逐字段合并**，而且排序比的是 **path 在前、namespace 在后**。
+> 所以第三方数据包写 `data/mypack/spoilage_env/environment.json` 时，path 和内置的
+> `data/shelflife/spoilage_env/environment.json` 打平，接着比 namespace，`mypack` 排在 `shelflife`
+> 前面 —— **你的整块 settings 会被内置的盖掉**。想让自己的生效，要么用**同名 path**
+> （同名时数据包赢过模组内置），要么取一个排在 `environment.json` 之后的名字（比如 `zz_mypack.json`）。
 
 ### 倍率公式
 
@@ -169,8 +194,34 @@ ShelfLife 的全部数值都在数据包里。这份文档是给**要在别的�
 | `doubling_per` | 0.8 | 温度每高这么多，腐烂速度翻倍。**必须 > 0** |
 | `humidity_base` / `humidity_span` | 0.75 / 0.5 | 湿度权重，湿度 0.5 时湿度因子正好 1.0 |
 | `min_multiplier` / `max_multiplier` | 0.05 / 4.0 | 夹上下限 |
+| `temperature_source` | `auto` | 温度从哪来：`auto` / `biome` / `createishot`。见下面的「摄氏模式」 |
+| `celsius_curve` | 见下 | 「群系温度 → 摄氏」的锚点表，用来把 createishot 的摄氏温度反查回原版刻度 |
 
 群系温度/湿度直接取原版 `Biome` 的值（平原约 0.8/0.4，沙漠约 2.0/0.0，雪原约 0.0/0.5）。
+
+### 摄氏模式（装了 createishot 时）
+
+`temperature_source` 默认 `auto`：**装了 createishot 就用它的温度，没装就用群系温度。**
+想固定住就写 `"biome"` 或 `"createishot"`。
+
+createishot 提供的是真正的热力学温度场（体素网格 + 传导 + 辐射，服务端求解），能表达群系温度
+表达不了的东西：站在营火边、海拔升高、入夜降温、下雨。用它的时候：
+
+```
+等效温度 = celsius_curve 反查(节点温度 + 容器的 celsius 修正)
+倍率     = clamp(2^((等效温度 - reference_temperature) / doubling_per) × 湿度因子, min, max)
+```
+
+**`celsius_curve` 就是 createishot 自己的「群系温度 → 摄氏」映射**，方向是「温度 → 摄氏」，
+本模组用的时候反过来查。默认 `[[0.0, -30.0], [1.0, 25.0], [2.0, 40.0]]` —— 注意它在 1.0 处有拐点，
+所以是分段线性而不是一条直线（低温段大约每 1.0 单位 = 55°C，高温段只有 15°C）。
+
+**这组数需要按你的 createishot 配置校准**（改了它的 `ThermalConfig` 之后这里不会自动跟着变）：
+站在平原、白天、晴天，`/createishot thermal at` 读到的环境温度，应该约等于曲线在 0.8 处的插值。
+
+> 超出锚点范围**不夹紧，而是沿最外那段外推** —— 夹紧会让"很热"和"极热"给出同一个倍率。
+
+> **湿度永远来自群系。** createishot 只管温度，没有湿度这个维度。
 
 **想彻底关掉环境倍率**：把 `doubling_per` 调得极大、`min_multiplier` 和 `max_multiplier` 都设成 `1.0`。
 
@@ -178,14 +229,22 @@ ShelfLife 的全部数值都在数据包里。这份文档是给**要在别的�
 
 | 字段 | 含义 |
 |---|---|
-| `temperature` | 加到群系温度上。**负数 = 更冷 = 更慢** |
+| `temperature` | 温度偏移，单位是**原版温度刻度**。**负数 = 更冷 = 更慢** |
 | `humidity` | 加到群系湿度上，夹在 0~1 |
-| `rate_override` | **直接指定倍率**，绕过温度、湿度和上下限。`0` = 完全不腐烂 |
+| `rate_override` | **直接指定倍率**，绕过温度和上下限。`0` = 完全不腐烂 |
+
+> **`temperature` 的单位在两种温度来源下完全一样。** 摄氏模式下节点温度会先被反查回原版刻度，
+> 这个偏移加在**反查之后** —— 所以同一份数据包在装 / 不装 createishot 时给出同样的冷却效果，
+> 不需要写两份。（曲线是非线性的，若把偏移加在摄氏那一层，同一个数字会差一个数量级。）
 
 键可以是方块 id，也可以是 `#方块标签`（一次给一整类方块）。
 
-**冷藏**用温度偏移就够了：给一个足够大的负数（比如 `-4.0`），它会撞到 `min_multiplier` 下限，
-得到约 ×0.05，也就是 20 倍保质期。这是 `shelflife:cold_box` 的做法。
+**冷藏就是给一个足够大的负偏移**：`temperature: -4.0` 会撞到 `min_multiplier` 下限，
+得到约 ×0.05，也就是 20 倍保质期 —— 这是 `shelflife:cold_box` 的做法。
+它不随群系变：沙漠里的冷箱还是同一个偏移，只是从一个更热的基准往下减。
+
+> 想让箱子"绝对稳定、和群系无关"，可以用 `rate_override` 把倍率钉死。
+> 但 **`rate_override: 0` 有个已知的坑**（见下一节）；`0.05` 这类正值没有那个问题。
 
 ### ⚠️ `rate_override` 的坑（用 `0` 之前必读）
 
@@ -243,8 +302,11 @@ ShelfLife 的全部数值都在数据包里。这份文档是给**要在别的�
 3. 必填 `max_spoilage` 和 `ticks_per_spoilage`（都 ≥ 1）；`result` 不写默认变成
    `shelflife:rotten_leftovers`，写 `minecraft:air` 表示不转化
 4. 时长换算：`max_spoilage × ticks_per_spoilage` 刻（20 刻 = 1 秒），常温下成立
-5. 让自己的容器更冷 → `spoilage_env/` 里 `"containers": { "你的方块id": { "temperature": -2.0 } }`
+5. 让自己的容器更冷 → `spoilage_env/` 里 `"containers": { "你的方块id": { "temperature": -2.0 } }`。
+   单位是原版温度刻度，装不装 createishot 都一样
 6. 别对**会被漏斗喂入**的容器用 `rate_override`，用 `temperature`
 7. 加载后看日志确认 `[ShelfLife] 保质期配置生效，覆盖 N 个物品`，N 要对
 8. 别指望它给"没被玩家碰过"的食物计时 —— 这是设计（事件驱动），不是 bug
 9. 写了规则的物品**不要**再自己实现腐烂逻辑，会打架
+10. 不想让 createishot 的热源影响腐烂 → `"temperature_source": "biome"`；
+    它的温度换算对不上 → 校准 `celsius_curve`（`/createishot thermal at`）

@@ -5,8 +5,9 @@
 
     python tools/generate_textures.py
 
-**物品贴图（rotten_meat / rotten_leftovers）是手绘的，不由这个脚本生成。**
-下面那两套字符画是另一版方案，已经不用了 —— 把它写回资源目录会把成品覆盖掉。
+**物品贴图里只有 moldy_cookie 由这个脚本生成**（而且是张占位图，等作者自己画）。
+**rotten_meat / rotten_leftovers 是手绘的，不由这个脚本生成** ——
+下面那两套字符画是另一版方案，已经不用了，写回资源目录会把成品覆盖掉。
 手绘版的备份在 ``tools/texture_backup/``，要还原就手工拷回
 ``src/main/resources/assets/shelflife/textures/item/``。
 
@@ -138,6 +139,37 @@ LEFTOVERS_ROWS = [
 ]
 
 
+# ---------------------------------------------------------------- 发霉曲奇（占位图）
+# 曲奇烤糊一半、边上长了霉斑。**这是占位图**，作者会自己画 —— 直接覆盖同名 PNG 即可，
+# 模型那边引的就是这个路径（assets/shelflife/models/item/moldy_cookie.json）。
+MOLDY_COOKIE_PALETTE = {
+    "K": (0x3A, 0x24, 0x12, 0xFF),  # 描边
+    "B": (0x8B, 0x5A, 0x2B, 0xFF),  # 饼干主色
+    "L": (0xA9, 0x74, 0x3F, 0xFF),  # 亮部
+    "X": (0x2E, 0x1B, 0x0D, 0xFF),  # 巧克力豆（烤糊的）
+    "G": (0x46, 0x6B, 0x24, 0xFF),  # 霉斑暗部
+    "g": (0x74, 0xA8, 0x3C, 0xFF),  # 霉斑
+}
+
+MOLDY_COOKIE_ROWS = [
+    "................",
+    "......KKKK......",
+    "....KKBBBBKK....",
+    "...KBBBLLLLBK...",
+    "..KBBLLBBBBLLK..",
+    ".KBBLBBXBBBLBBK.",
+    ".KBXBBBBBBBGBBK.",
+    "KBLLBBBXBBBGGBBK",
+    "KBXBBBBBBBBGGBBK",
+    "KBBBLBBXBBBBBGBK",
+    ".KBBBBBBBBXBBK..",
+    ".KBBXBBLBBBBK...",
+    "..KBBBBBBXBBK...",
+    "...KKBBBBKK.....",
+    ".....KKKK.......",
+    "................",
+]
+
 # ---------------------------------------------------------------- 冷箱（方块贴图）
 # 木框 + 木板 + 一道冰蓝腰线。方块贴图必须全部不透明，所以这里没有 '.'。
 BLOCK_OUT_DIR = Path(__file__).resolve().parent.parent / "src/main/resources/assets/shelflife/textures/block"
@@ -194,6 +226,7 @@ def main() -> None:
     # 故意不写 rotten_meat.png / rotten_leftovers.png ——
     # 资源目录里那两张是手绘的，这个脚本生成的是另一版（见文件头的说明）。
     force = "--force" in sys.argv
+    write_png(OUT_DIR / "moldy_cookie.png", MOLDY_COOKIE_ROWS, MOLDY_COOKIE_PALETTE, force)
     write_png(BLOCK_OUT_DIR / "cold_box_side.png", COLD_BOX_SIDE_ROWS, COLD_BOX_PALETTE, force)
     write_png(BLOCK_OUT_DIR / "cold_box_top.png", COLD_BOX_TOP_ROWS, COLD_BOX_PALETTE, force)
     write_png(BLOCK_OUT_DIR / "cold_box_bottom.png", COLD_BOX_BOTTOM_ROWS, COLD_BOX_PALETTE, force)

@@ -72,6 +72,16 @@ versionRange = "${minecraft_version_range}"
 ordering = "NONE"
 side = "BOTH"
 
+# 可选依赖：装了 createishot 时，腐烂计算改用它的温度系统替代群系温度。
+# 没装则一切照旧 —— 所有对它的调用都集中在 CreateishotCompat 里，且都能接受"拿不到值"。
+[[dependencies."${mod_id}"]]
+modId = "createishot"
+type = "optional"
+versionRange = "*"
+# 它的热网格要在自己的 common setup 里 bootstrap，所以必须排在它后面
+ordering = "AFTER"
+side = "BOTH"
+
 # Features are specific properties of the game environment, that you may want to declare you require. This example declares
 # that your mod requires GL version 3.2 or higher. Other features will be added. They are side aware so declaring this won't
 # stop your mod loading on the server for example.

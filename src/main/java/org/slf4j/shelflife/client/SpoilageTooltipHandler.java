@@ -62,21 +62,47 @@ public final class SpoilageTooltipHandler {
         if (level == null) return;
 
         EnvironmentSample sample = ClientEnvironmentCache.sampleFor(stack);
+        boolean advanced = event.getFlags().isAdvanced();
         List<Component> tooltip = event.getToolTip();
         int index = Math.min(1, tooltip.size());
-        // 名称在索引 0，插到它正下方
-        tooltip.add(index, buildShelfLife(data, config, sample.rate(), level.getGameTime()));
+        // 名称在索引 0，插到它正下方。高级提示框下时间精确到秒，平时只到分
+        tooltip.add(index, buildShelfLife(data, config, sample.rate(), level.getGameTime(), advanced));
 
         // 倍率和推导过程只在高级提示框里出现 —— 平时玩游戏不需要看见公式
-        if (!event.getFlags().isAdvanced()) return;
+        if (!advanced) return;
         tooltip.add(index + 1, buildRate(sample.rate()));
-        tooltip.add(index + 2, buildFormula(sample));
+
+        int cursor = index + 2;
+        // 摄氏模式多一行：下面公式里那个"等效温度"是从摄氏换算来的，不说明白就对不上
+        if (sample.hasCelsius()) {
+            tooltip.add(cursor++, buildCelsius(sample));
+        }
+        tooltip.add(cursor, buildFormula(sample));
     }
 
-    private static Component buildShelfLife(SpoilageData data, SpoilageConfig config, float rate, long now) {
+    /**
+     * 摄氏模式专有的一行：真实节点温度 → 曲线反查出来的等效原版温度。
+     *
+     * <p>中间的换算不是一条简单公式（是分段线性的锚点插值），所以只报结果不报式子。
+     */
+    private static Component buildCelsius(EnvironmentSample sample) {
+        return indented(Component.translatable("tooltip.shelflife.formula.celsius",
+                format(sample.celsius(), 1), format(sample.temperature(), 2)));
+    }
+
+    /**
+     * 保质期那一行。
+     *
+     * @param advanced 原版高级提示框（F3+H）是否打开。<b>开着才显示到秒</b>，
+     *                 关着只到分 —— 平时玩不需要看见秒数跳动，而那正好是让人怀疑
+     *                 "它是不是每秒都在算"的源头（其实只是显示层在实时推算）。
+     */
+    private static Component buildShelfLife(SpoilageData data, SpoilageConfig config, float rate, long now,
+                                            boolean advanced) {
         // 背包不再定时结算，组件里的值是"上次结算时刻的检查点"，
         // 所以这里必须按时间差和倍率推算当前值，否则食物会在背包里放很久但 tooltip 数字一直不动
-        int current = SpoilageSettlement.effective(data, config, rate, now);
+        // 用带小数的版本：整点版本会让秒数几分钟才跳一格（见 effectiveFractional 的注释）
+        double current = SpoilageSettlement.effectiveFractional(data, config, rate, now);
         if (current >= data.maxSpoilage()) {
             return Component.translatable("tooltip.shelflife.spoiled").withStyle(ChatFormatting.DARK_RED);
         }
@@ -87,7 +113,7 @@ public final class SpoilageTooltipHandler {
 
         // 用组件里的 maxSpoilage 而不是配置里的：物品的保质期上限是它被创建时定下的，
         // 之后管理员改数据包不应该让已有物品的上限跟着变，否则 tooltip 和实际进度会对不上
-        int remainingPoints = data.maxSpoilage() - current;
+        double remainingPoints = data.maxSpoilage() - current;
         // 剩余点数是"暴露时间"，换算成真实时间要除回倍率 —— 寒冷环境里同样是 10 点，真实时间更长
         long remainingTicks = (long) (remainingPoints * (double) config.ticksPerSpoilage() / rate);
 
@@ -96,9 +122,15 @@ public final class SpoilageTooltipHandler {
         long minutes = (totalSeconds % SECONDS_PER_HOUR) / SECONDS_PER_MINUTE;
         long seconds = totalSeconds % SECONDS_PER_MINUTE;
 
-        if (hours > 0) return Component.translatable("tooltip.shelflife.life.hours", hours, minutes).withStyle(ChatFormatting.GRAY);
-        if (minutes > 0) return Component.translatable("tooltip.shelflife.life.minutes", minutes, seconds).withStyle(ChatFormatting.GRAY);
-        return Component.translatable("tooltip.shelflife.life.seconds", seconds).withStyle(ChatFormatting.GRAY);
+        if (advanced) {
+            if (hours > 0) return Component.translatable("tooltip.shelflife.life.hours.minutes.seconds", hours, minutes, seconds).withStyle(ChatFormatting.GRAY);
+            if (minutes > 0) return Component.translatable("tooltip.shelflife.life.minutes.seconds", minutes, seconds).withStyle(ChatFormatting.GRAY);
+            return Component.translatable("tooltip.shelflife.life.seconds", seconds).withStyle(ChatFormatting.GRAY);
+        }
+        // 关着高级提示框：只到分，不足一分钟不显示"0分"而是写清楚
+        if (hours > 0) return Component.translatable("tooltip.shelflife.life.hours.minutes", hours, minutes).withStyle(ChatFormatting.GRAY);
+        if (minutes > 0) return Component.translatable("tooltip.shelflife.life.minutes", minutes).withStyle(ChatFormatting.GRAY);
+        return Component.translatable("tooltip.shelflife.life.under_minute").withStyle(ChatFormatting.GRAY);
     }
 
     /** 冷/热一眼可辨：低于 1 是变慢（冷），高于 1 是变快（热）。 */
