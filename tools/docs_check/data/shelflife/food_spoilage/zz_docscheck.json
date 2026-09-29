@@ -1,5 +1,7 @@
 {
+  "max_spoilage": 100,
   "items": {
-    "minecraft:apple": { "max_spoilage": 100, "ticks_per_spoilage": 9999 }
+    "minecraft:apple": { "ticks_per_spoilage": 9999 },
+    "minecraft:cookie": { "ticks_per_spoilage": 999 }
   }
 }

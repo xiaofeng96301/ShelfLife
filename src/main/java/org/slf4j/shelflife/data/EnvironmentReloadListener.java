@@ -31,11 +31,15 @@ import java.util.Optional;
  * {
  *   "neoforge:conditions": [ { "type": "neoforge:mod_loaded", "modid": "..." } ],
  *   "settings":   { "reference_temperature": 0.8, "doubling_per": 0.8, ... },
- *   "containers": { "shelflife:fridge": { "temperature": -2.0 }, "#shelflife:insulated": { ... } }
+ *   "containers": { "shelflife:fridge": { "temperature": -2.0 }, "#shelflife:insulated": { ... } },
+ *   "container_rules": [
+ *     { "blocks": "mymod:freezer", "state": { "top": "true" }, "temperature": -1.6 }
+ *   ]
  * }
  * </pre>
  *
- * <p>两节都可以省略；多个文件时按文件 id 排序依次覆盖（后写的赢）。
+ * <p>三节都可以省略；多个文件时按文件 id 排序依次覆盖（后写的赢）。
+ * {@code container_rules} 是唯一按状态的写法，见 {@link ContainerRule}。
  */
 public class EnvironmentReloadListener extends SimpleJsonResourceReloadListener {
 
@@ -79,19 +83,26 @@ public class EnvironmentReloadListener extends SimpleJsonResourceReloadListener 
 
         EnvironmentSettings settings = null;
         Map<String, ContainerModifier> containers = new HashMap<>();
+        // rules 是**有序**的、靠"后写的赢"表达优先级，所以这里按文件顺序追加，不能 putAll
+        List<ContainerRule> containerRules = new ArrayList<>();
         for (EnvDocument doc : docs) {
             if (doc.settings().isPresent()) settings = doc.settings().get();
             containers.putAll(doc.containers());
+            containerRules.addAll(doc.containerRules());
         }
 
-        EnvironmentManager.setRaw(settings, containers);
+        EnvironmentManager.setRaw(settings, containers, containerRules);
     }
 
-    private record EnvDocument(Optional<EnvironmentSettings> settings, Map<String, ContainerModifier> containers) {
+    private record EnvDocument(Optional<EnvironmentSettings> settings,
+                               Map<String, ContainerModifier> containers,
+                               List<ContainerRule> containerRules) {
         static final Codec<EnvDocument> CODEC = RecordCodecBuilder.create(instance -> instance.group(
                 EnvironmentSettings.CODEC.optionalFieldOf("settings").forGetter(EnvDocument::settings),
                 Codec.unboundedMap(Codec.STRING, ContainerModifier.CODEC)
-                        .optionalFieldOf("containers", Map.of()).forGetter(EnvDocument::containers)
+                        .optionalFieldOf("containers", Map.of()).forGetter(EnvDocument::containers),
+                ContainerRule.CODEC.listOf()
+                        .optionalFieldOf("container_rules", List.of()).forGetter(EnvDocument::containerRules)
         ).apply(instance, EnvDocument::new));
     }
 }

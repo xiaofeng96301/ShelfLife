@@ -32,8 +32,10 @@ import java.util.Map;
  *
  * <p>染色是<b>乘性</b>的，只能压暗/偏色，不能变亮 —— 所以"发绿"是用一个偏绿的中性色乘上去。
  *
- * <p>已知边界：只对 {@code item/generated} 模型（layer0）生效，多层模型的其它层不受影响；
- * 若数据包把带原版染色的物品（药水、皮革护甲之类）写进保质期表，本模组会覆盖掉它的染色。
+ * <p><b>已知边界</b>：非叠加层模式只染第 {@value #BASE_LAYER} 层，其它层一律返回"不染" ——
+ * 所以不会去动别人的层（药水的液体层就是 layer1，那是它自己的事）。
+ * 但第 0 层本身原有的染色会被本模组覆盖掉 —— 数据包把一个本来就带原版染色的物品
+ * （药水、皮革护甲）写进保质期表时要注意这一点。
  */
 @EventBusSubscriber(modid = Shelflife.MODID, value = Dist.CLIENT)
 public final class SpoilageTintHandler {

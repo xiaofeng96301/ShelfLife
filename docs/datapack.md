@@ -306,8 +306,8 @@ tooltip 还是会走到"已腐烂"。
 | `zz_mypack.json` | `v` < `z`，排在后面 | **你的赢** ✅ |
 | `aaa.json` | `a` < `v`，排在前面 | 内置的赢 ❌ 换个排在后面的名字 |
 
-**改一个物品的数值不需要动内置那个文件** —— 食物规则是按**物品**合并的
-（后看到的 `put` 覆盖先看到的），你只声明要改的那几个，其余照用内置。
+**改一个物品的数值不需要动内置那个文件** —— 重复声明是**按字段**合并的：
+后一条只覆盖它**真正写了**的字段，没写的继承前一条（见下面「重复声明的合并规则」）。
 
 #### ⚠️ 如果你要写自己的命名空间
 
@@ -320,9 +320,28 @@ tooltip 还是会走到"已腐烂"。
 写自己的命名空间时，取一个**排在 `vanilla_foods.json` 之后**的文件名
 （`zz_mypack.json`）就没事。省下的是命名空间上的自由度，代价是这条规则得一直记着。
 
+#### 重复声明的合并规则：**按字段继承**
+
+同一个物品被多处声明时，**后面的只覆盖它自己写了的字段**，没写的继承前面那条：
+
+| 字段 | 省略时 |
+|---|---|
+| `max_spoilage` / `ticks_per_spoilage` | **必须给出**（自己的，或本文档顶层的默认值）—— 它们没有合理的缺省值，与其猜不如加载时报错 |
+| `result` / `tint` / `overlay` | 继承前一条；前面没人声明就各用各的默认值 |
+
+**这条规则是为了避免一个很阴的坑**：曲奇的模型带霉斑叠加层（`overlay: true` 加一个自定义
+`tint`），另一份数据包只想改它的保质期，于是写了
+`"minecraft:cookie": { "ticks_per_spoilage": 999 }` —— 在"整条替换"的旧语义下，这一条会把
+`overlay` 和 `tint` 一起冲回默认值：**叠加层还在，但它的颜色和透明度被换掉了**，
+看起来像渲染坏了，其实是数据被覆盖了。
+
+**要显式重置某个字段，就把它写出来**：`"overlay": false`。省略 = 继承，写明 = 覆盖。
+
 #### 出问题时看日志
 
-同一个物品被两处声明**且数值不同**时，会有一条 warn 告诉你**谁赢了**：
+发生覆盖**且结果确实变了**时，会有一条 warn 告诉你从什么变成了什么 ——
+上面那个例子里它会显示 `ticksPerSpoilage=3600 -> 999`，而 `tint`/`overlay` 两边一模一样
+（值没变就不会提）。
 
 ```
 [ShelfLife] 物品 minecraft:apple 的保质期参数被 shelflife:food_spoilage/zz_mypack.json 覆盖（... -> ...）
@@ -467,6 +486,47 @@ tooltip 还是会走到"已腐烂"。
 > 这个偏移加在**反查之后** —— 所以同一份数据包在装 / 不装 createishot 时给出同样的冷却效果，
 > 不需要写两份。（曲线是分段线性的，若把偏移加在摄氏那一层，同一个数字会差一个数量级。）
 
+#### 按方块状态区分：`container_rules`
+
+`containers` 的键只有方块，表达不了"同一个方块、两个状态"的容器 —— 典型是靠 `top` 属性
+区分上下半的冷冻柜（一半制冷、一半不制）。这种用 `container_rules`，它是个**有序列表**，
+每条 = 一条匹配条件 + 一组修正：
+
+```json
+{
+  "containers": { "mymod:chest": { "temperature": -2.0 } },
+  "container_rules": [
+    { "blocks": "mymod:freezer", "state": { "top": "true" },  "temperature": -1.6 },
+    { "blocks": "mymod:freezer", "state": { "top": "false" }, "rate_override": 0 },
+    { "blocks": "#mymod:cold_boxes", "rate_override": 0 }
+  ]
+}
+```
+
+匹配条件就是**原版进度条件里那个 `BlockPredicate`**（`blocks` / `state` / `nbt` 三个字段名
+一字不差），所以熟悉原版写法的人不用学新东西：
+
+| 字段 | 说明 |
+|---|---|
+| `blocks` | 方块 id、`#标签`，或者它们的列表。标签由原版 `HolderSet` 原生支持，本模组不自己展开 |
+| `state` | 状态匹配，如 `{ "top": "true" }`、`{ "type": "bottom" }` |
+| `nbt` | **不支持** —— 本模组的查询只有"方块 + 状态"，读不了方块实体。写了会被丢弃并打 warn |
+
+修正部分和 `containers` 里完全一样（`temperature` / `humidity` / `rate_override`）。
+
+几条要记住的：
+
+- **顺序 = 优先级，后写的赢**（同一文件里从上到下，跨文件按文件名排序）。查的时候倒着扫，
+  第一条命中的就用它
+- **`container_rules` 优先于 `containers`**：命中一条规则就不再去看老表 ——
+  也就是说老表里针对同一个方块的条目会被规则盖掉（规则更"显式"）
+- 只写 `blocks` 不写 `state` = "这个方块的所有状态"
+- **既没写 `blocks` 也没写 `state`** 的规则会命中所有方块 → 被忽略并打 warn
+- `blocks` 引用的方块/标签一个都不存在 → 也打 warn（否则它就是条永远匹配不上的死规则，
+  而"死规则"比报错更难查）
+- 方块状态**对不上**时（比如调用方给的方块和那个位置上的不一致），只会去查老表 ——
+  宁可少匹配，也不要拿一个别的方块的状态去命中规则
+
 ### 3.5 容器三种做法 —— 什么时候用哪个
 
 两个方向都是同一个字段，只是正负号不同：
@@ -561,6 +621,9 @@ createishot 提供的是真正的热力学温度场（体素网格 + 传导 + �
 
 > **`settings` 是整块覆盖，不是逐字段合并。** 而且排序比的是
 > **path 在前、namespace 在后**（和 §2.6 同一个机制）。
+>
+> **注意这里的"整块覆盖"和 `food_spoilage` 不一样**：食物规则现在是**按字段继承**的
+> （§2.6），但 `settings` 不是 —— 这里省略一个字段 ≠ 继承，而是回到**代码里的内置默认值**。
 
 意味着两件事：
 
@@ -743,7 +806,9 @@ if (!taken.isEmpty()) {
 
 **先确认你需要这个。** 固定温度的容器（"我这个方块就是个冰箱"）**不需要写任何 Java** ——
 数据包里 [§3.4](#34-containers-字段表) 的 `containers` 一行就够了，本模组的冷箱就是这么实现的。
-**只有状态会自己变的容器**才需要这一节：通电才冷、燃料烧完就停、开盖时保温失效。
+**只有数据包表达不了的容器**才需要这一节：动态状态（通电才冷、燃料烧完就停）、
+或者需要 NBT 才能判断的。**如果差异只是"同一个方块的不同状态"（比如上下半），
+那是数据包能表达的 —— 用 §3.4 的 `container_rules` 就行，一行 Java 都不用写。**
 
 #### ① 先解决一个前置问题：`climate()` 读什么
 
@@ -906,6 +971,50 @@ public class PoweredFridgeBlockEntity extends BaseContainerBlockEntity implement
 > 同理，**搬运物品**的模组要在抽取时调 `ShelfLifeApi.settleStack`（§6.2），
 > 那个是"物品离开容器"的对应动作。
 
+### 6.4 容器定位扩展点：`MenuContainerProvider` / `ContainerLocators`
+
+**这是干什么的。** 本模组默认靠遍历菜单槽位、找"槽位容器是方块实体"的那个来反查容器位置。
+这条路对原版容器都成立，但对两类真实容器**永远不成立**，而且失败得完全静默：
+
+- **用 `SlotItemHandler` 的机器**（Mekanism 以及一大票模组）——
+  它的槽位容器是一个**共享的空 `SimpleContainer`**，不是方块实体，按构造必然查不到
+- **把两个容器包起来的复合容器**（双联箱、Balm 那类"懒人厨房冰箱"）
+
+**后果不只是提示框的倍率不对**：开箱时那次结算会按**玩家脚下**的倍率给容器里的食物记账，
+是实打实的算错账。以前这种情况连日志都没有，现在会打一条 warn：
+
+```
+[ShelfLife] 反查不到容器位置：com.example.MyMachineMenu，将退化为按玩家位置采样（容器修正不会生效）…
+```
+
+**两种接法，选一种：**
+
+**① 自己的菜单实现 `MenuContainerProvider`（推荐，零注册）**
+
+```java
+public class MyMachineMenu extends AbstractContainerMenu implements MenuContainerProvider {
+    private final MyMachineBlockEntity machine;
+
+    @Override
+    public @Nullable BlockEntity shelfLifeContainer() {
+        return machine;
+    }
+}
+```
+
+**② 菜单不是自己的**（别人的模组写死了）→ **注册一个定位器**：
+
+```java
+// 在 mod 的 init 阶段
+ContainerLocators.register(menu ->
+        menu instanceof TheirMachineMenu their ? their.getTileEntity() : null);
+```
+
+注册顺序 = 优先级（先注册的先问）。问的顺序是**先菜单自己的接口、再注册表、最后才遍历槽位** ——
+显式声明永远优先于猜。每个定位器都被单独兜了异常：一个模组写坏了不会让所有容器的定位一起失效。
+
+> 这两个类都在 `api/` 里，所以用到它们的代码同样要按 §6.1 做**可选依赖**保护。
+
 ---
 
 ## 7. 日志速查
@@ -964,6 +1073,9 @@ public class PoweredFridgeBlockEntity extends BaseContainerBlockEntity implement
 | **腐烂箱不够快** | 撞到了 `max_multiplier`（默认 4.0）→ 改用 `rate_override`（它不受上下限约束） |
 | **新加的容器修正完全没效果** | 键写的是方块 id，要确认那个方块**真的实现了 `Container`**（冷源只在容器被采样时施加） |
 | **动态冰箱（通电才冷）断电后账算错** | 改状态**之前**没调 `ShelfLifeApi.settleContainer`，或者只调了一个方向。见 §6.3 |
+| **机器 / 复合容器里的食物按常温在记账** | 反查不到容器位置（日志里有 warn）。让菜单实现 `MenuContainerProvider`，或注册 `ContainerLocators`。见 §6.4 |
+| **改了 `tint`/`overlay`，但霉斑的颜色/透明度不对** | 有另一份数据包也声明了这个物品。重复声明**按字段继承**，它多半只改了自己写的那几个字段 —— 看日志里的覆盖警告。见 §2.6 |
+| **想给同一个方块的两种状态配不同冷源** | 用 `container_rules` 的 `state`，别为它写 Java。见 §3.4 |
 | **堆叠之后保质期变了** | 饥荒式加权平均：`(旧值×旧数量 + 新值×新数量) ÷ 总数`。这是设计 |
 
 ---
@@ -995,3 +1107,10 @@ public class PoweredFridgeBlockEntity extends BaseContainerBlockEntity implement
 12. 写了规则的物品**不要**再自己实现一套腐烂逻辑，会打架
 13. 动态容器（通电才冷那种）：`climate()` 只读自己的字段，**状态真的变了时先调
     `ShelfLifeApi.settleContainer` 再改状态**，通电/断电两个方向都要 —— 完整示范见 §6.3
+14. **同一个方块的两种状态**要不同冷源 → `container_rules`
+    （`{"blocks": …, "state": {…}}`，形状同原版 `BlockPredicate`；`nbt` 不支持；
+    优先于 `containers`）。**别为它去实现 `ContainerClimate`** —— 那是数据包能表达的事
+15. 重复声明同一个物品是**按字段继承**的（后写的只覆盖它写了的字段）；
+    要显式重置某个字段就把它写出来。`settings` 不一样，它仍是整块覆盖
+16. 你的机器容器（用 `SlotItemHandler` 那类）要让菜单实现 `MenuContainerProvider`
+    （或注册 `ContainerLocators`），否则里面食物的账会按**玩家脚下**的倍率记

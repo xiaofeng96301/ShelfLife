@@ -1,5 +1,6 @@
 package org.slf4j.shelflife.logic;
 
+import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.NonNullList;
 import net.minecraft.server.level.ServerPlayer;
@@ -11,12 +12,17 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
 import org.slf4j.shelflife.Shelflife;
+import org.slf4j.shelflife.api.ContainerLocators;
+import org.slf4j.shelflife.api.MenuContainerProvider;
 import org.slf4j.shelflife.component.SpoilageData;
 import org.slf4j.shelflife.data.SpoilageConfig;
 import org.slf4j.shelflife.data.SpoilageManager;
 
 import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 对<b>背包和容器里的物品</b>做结算与刷新 —— "写"的那一半。
@@ -29,6 +35,11 @@ import java.util.Optional;
  * {@link SpoilageSettlement}，所以语义只有一套。
  */
 public final class InventorySpoilage {
+
+    private static final Logger LOGGER = LogUtils.getLogger();
+
+    /** 已经提醒过"反查不到容器位置"的菜单类。每个类只说一次，免得刷屏。 */
+    private static final Set<Class<?>> WARNED_MENUS = ConcurrentHashMap.newKeySet();
 
     private InventorySpoilage() {
     }
@@ -203,8 +214,32 @@ public final class InventorySpoilage {
     public record ContainerLocation(Level level, BlockPos pos) {
     }
 
-    /** 从菜单的槽位反查容器所在的位置。找到第一个由方块实体承载的槽位即可。 */
+    /**
+     * 从菜单反查容器所在的位置。
+     *
+     * <p>顺序是**先显式、后猜**：
+     * <ol>
+     *   <li>菜单自己实现了 {@link MenuContainerProvider}，或者别的模组在
+     *       {@link ContainerLocators} 里注册过定位器 —— 直接问它们</li>
+     *   <li>再退回遍历槽位，找第一个由方块实体承载的（原版箱子/木桶/熔炉/漏斗都在这条路上）</li>
+     * </ol>
+     *
+     * <p>第 2 条对 {@code SlotItemHandler} 那类机器容器**永远猜不中** ——
+     * 它的槽位容器是一个共享的空 {@code SimpleContainer}。所以查不到时这里会**出声**：
+     * 查不到的后果不是"显示不对"，而是开箱那次结算会按玩家脚下的倍率给容器里的食物记账，
+     * 也就是静默地算错账。每个菜单类只提醒一次。
+     */
     public static Optional<ContainerLocation> locate(AbstractContainerMenu menu) {
+        // ① 显式声明的（最了解自己的是菜单自己，其次是注册过的模组）
+        BlockEntity explicit = ContainerLocators.find(menu);
+        if (explicit != null) {
+            Level explicitLevel = explicit.getLevel();
+            if (explicitLevel != null) {
+                return Optional.of(new ContainerLocation(explicitLevel, explicit.getBlockPos()));
+            }
+        }
+
+        // ② 猜：找第一个由方块实体承载的槽位
         for (Slot slot : menu.slots) {
             if (slot.container instanceof BlockEntity blockEntity) {
                 Level beLevel = blockEntity.getLevel();
@@ -212,6 +247,13 @@ public final class InventorySpoilage {
                     return Optional.of(new ContainerLocation(beLevel, blockEntity.getBlockPos()));
                 }
             }
+        }
+
+        // ③ 都没有：提醒一次。这次是靠逐行读源码才找到的，一条日志能省两小时
+        if (WARNED_MENUS.add(menu.getClass())) {
+            LOGGER.warn("[ShelfLife] 反查不到容器位置：{}，将退化为按玩家位置采样（容器修正不会生效）。"
+                            + "如果是你的菜单，让它实现 MenuContainerProvider，或在 ContainerLocators 里注册一个定位器",
+                    menu.getClass().getName());
         }
         return Optional.empty();
     }

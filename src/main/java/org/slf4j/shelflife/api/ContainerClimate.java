@@ -17,8 +17,17 @@ import org.slf4j.shelflife.data.ContainerModifier;
  * { "containers": { "mymod:fridge": { "temperature": -4.0 } } }
  * </pre>
  *
- * <p>只有<b>动态</b>的容器才需要这个接口 —— 状态会自己变的那种：
- * 通电才冷、燃料烧完就停、开盖时保温失效。
+ * <p>只有<b>数据包表达不了</b>的容器才需要这个接口：
+ *
+ * <ul>
+ *   <li><b>动态</b>的：通电才冷、燃料烧完就停、开盖时保温失效（数据包只能写死一个值）</li>
+ *   <li>需要 <b>NBT</b> 才能判断的</li>
+ * </ul>
+ *
+ * <p><b>如果差异只是"同一个方块的不同状态"</b>（靠 {@code top} 属性区分上下半那种），
+ * 那是数据包能表达的 —— 用 {@code spoilage_env} 里的 {@code container_rules} 就行
+ * （见仓库的 docs/datapack.md §3.4），一行 Java 都不用写。别把数据包能做的事搬进代码：
+ * 混入会让整合包在你的实现上没法改，而数据包是给整合包改的。
  *
  * <h2>优先级</h2>
  *

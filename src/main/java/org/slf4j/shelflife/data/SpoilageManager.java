@@ -57,22 +57,24 @@ public final class SpoilageManager {
         for (Map.Entry<ResourceLocation, SpoilageRule> fileEntry : rules) {
             ResourceLocation fileId = fileEntry.getKey();
             for (SpoilageRule.Entry entry : fileEntry.getValue().entries()) {
-                SpoilageConfig config = new SpoilageConfig(entry.maxSpoilage(), entry.ticksPerSpoilage(),
-                        entry.result(), entry.tint(), entry.overlay());
                 String ref = entry.itemRef();
                 if (ref.startsWith("#")) {
-                    resolveTag(fileId, ref.substring(1), config, resolved);
+                    resolveTag(fileId, ref.substring(1), entry, resolved);
                 } else {
-                    resolveItem(fileId, ref, config, resolved);
+                    resolveItem(fileId, ref, entry, resolved);
                 }
 
                 // 提前校验产物 id：写错了要在这里就报出来，
                 // 而不是等玩家把食物放到保质期耗尽才发现什么也没发生。
+                // 只校验**这条声明自己写了的** —— 没写就是继承别的文件或用默认值，
+                // 那个 id 不归这条声明负责（默认值本身是存在的）。
                 // 每个 id 只报一次，免得一张表里几十条各刷一遍警告。
-                // （"minecraft:air" 是合法的"不转化"写法，不报警告）
-                if (checkedResults.add(entry.result()) && !BuiltInRegistries.ITEM.containsKey(entry.result())) {
-                    LOGGER.warn("[ShelfLife] {} 的 result 指向不存在的物品 {}，保质期耗尽后不会转化", fileId, entry.result());
-                }
+                // （"minecraft:air" 是合法的"不转化"写法，它存在，所以不会被报）
+                entry.result().ifPresent(result -> {
+                    if (checkedResults.add(result) && !BuiltInRegistries.ITEM.containsKey(result)) {
+                        LOGGER.warn("[ShelfLife] {} 的 result 指向不存在的物品 {}，保质期耗尽后不会转化", fileId, result);
+                    }
+                });
             }
         }
 
@@ -97,7 +99,7 @@ public final class SpoilageManager {
         return out;
     }
 
-    private static void resolveTag(ResourceLocation fileId, String tagPath, SpoilageConfig config, Map<Item, SpoilageConfig> out) {
+    private static void resolveTag(ResourceLocation fileId, String tagPath, SpoilageRule.Entry entry, Map<Item, SpoilageConfig> out) {
         ResourceLocation tagId = ResourceLocation.tryParse(tagPath);
         if (tagId == null) {
             LOGGER.error("[ShelfLife] {} 里的标签引用 '#{}' 不是合法 ResourceLocation，已忽略", fileId, tagPath);
@@ -105,11 +107,11 @@ public final class SpoilageManager {
         }
         TagKey<Item> tag = TagKey.create(Registries.ITEM, tagId);
         BuiltInRegistries.ITEM.getTag(tag).ifPresentOrElse(
-                holders -> holders.forEach(holder -> put(out, holder.value(), config, fileId, "#" + tagPath)),
+                holders -> holders.forEach(holder -> put(out, holder.value(), entry, fileId, "#" + tagPath)),
                 () -> LOGGER.warn("[ShelfLife] {} 引用了不存在的物品标签 #{}，已忽略", fileId, tagPath));
     }
 
-    private static void resolveItem(ResourceLocation fileId, String itemPath, SpoilageConfig config, Map<Item, SpoilageConfig> out) {
+    private static void resolveItem(ResourceLocation fileId, String itemPath, SpoilageRule.Entry entry, Map<Item, SpoilageConfig> out) {
         ResourceLocation itemId = ResourceLocation.tryParse(itemPath);
         if (itemId == null) {
             LOGGER.error("[ShelfLife] {} 里的物品引用 '{}' 不是合法 ResourceLocation，已忽略", fileId, itemPath);
@@ -119,14 +121,27 @@ public final class SpoilageManager {
             LOGGER.warn("[ShelfLife] {} 引用了不存在的物品 {}，已忽略", fileId, itemId);
             return;
         }
-        put(out, BuiltInRegistries.ITEM.get(itemId), config, fileId, itemPath);
+        put(out, BuiltInRegistries.ITEM.get(itemId), entry, fileId, itemPath);
     }
 
-    private static void put(Map<Item, SpoilageConfig> out, Item item, SpoilageConfig config, ResourceLocation fileId, String ref) {
-        SpoilageConfig previous = out.put(item, config);
-        if (previous != null && !previous.equals(config)) {
+    /**
+     * 把一条声明落到某个具体物品上。
+     *
+     * <p><b>同一个物品被多处声明时按字段合并</b>：这条声明真正写了的字段才覆盖，没写的留着上一条的。
+     * 以前是整条替换，于是"只想改一下曲奇的保质期"会把它的 {@code overlay}/{@code tint}
+     * 一起冲回默认值 —— 表现是霉斑叠加层还在、但颜色和透明度不对，看着像渲染坏了。
+     * 详见 {@link SpoilageRule.Entry#mergeOver}。
+     *
+     * <p>想显式重置某个字段就把它写出来（{@code "overlay": false}）；省略 = 继承。
+     */
+    private static void put(Map<Item, SpoilageConfig> out, Item item, SpoilageRule.Entry entry,
+                            ResourceLocation fileId, String ref) {
+        SpoilageConfig previous = out.get(item);
+        SpoilageConfig merged = previous == null ? entry.toConfig() : entry.mergeOver(previous);
+        if (previous != null && !previous.equals(merged)) {
             LOGGER.warn("[ShelfLife] 物品 {} 的保质期参数被 {} 覆盖（{} -> {}）",
-                    BuiltInRegistries.ITEM.getKey(item), fileId, previous, config);
+                    BuiltInRegistries.ITEM.getKey(item), fileId, previous, merged);
         }
+        out.put(item, merged);
     }
 }

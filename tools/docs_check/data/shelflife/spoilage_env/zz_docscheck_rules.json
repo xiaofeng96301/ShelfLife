@@ -1,0 +1,7 @@
+{
+  "container_rules": [
+    { "blocks": "minecraft:oak_slab", "state": { "type": "top" }, "rate_override": 0.0 },
+    { "blocks": "minecraft:oak_slab", "state": { "type": "bottom" }, "rate_override": 3.0 },
+    { "blocks": "#minecraft:wool", "rate_override": 1.5 }
+  ]
+}

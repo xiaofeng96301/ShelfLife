@@ -1,11 +1,13 @@
 package org.slf4j.shelflife.data;
 
 import com.mojang.logging.LogUtils;
+import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.shelflife.logic.CreateishotCompat;
@@ -34,11 +36,19 @@ public final class EnvironmentManager {
     private static volatile List<Map.Entry<String, ContainerModifier>> rawContainers = List.of();
     private static volatile Map<Block, ContainerModifier> byBlock = Map.of();
 
+    /**
+     * {@code container_rules}：按**方块状态**区分的修正，按文件（以及文件内）顺序存。
+     * 查询时倒序扫 —— 后写的赢。见 {@link ContainerRule}。
+     */
+    private static volatile List<ContainerRule> rules = List.of();
+
     private EnvironmentManager() {
     }
 
     /** 第一段：数据包 reload，纯 JSON。 */
-    public static void setRaw(@Nullable EnvironmentSettings newSettings, Map<String, ContainerModifier> containers) {
+    public static void setRaw(@Nullable EnvironmentSettings newSettings,
+                              Map<String, ContainerModifier> containers,
+                              List<ContainerRule> containerRules) {
         if (newSettings != null) {
             // 在这里把 auto 落到具体来源上，之后（包括同步给客户端的）永远是解析过的值。
             // 放在这里而不是查询时，是因为客户端也会跑这套代码 —— 让它按自己的模组列表解析，
@@ -49,6 +59,7 @@ public final class EnvironmentManager {
         sorted.sort(Map.Entry.comparingByKey());
         rawContainers = List.copyOf(sorted);
         byBlock = Map.of();
+        rules = List.copyOf(containerRules);
     }
 
     /**
@@ -92,14 +103,70 @@ public final class EnvironmentManager {
         if (!byBlock.isEmpty()) {
             LOGGER.info("[ShelfLife] 容器环境修正生效，覆盖 {} 个方块", byBlock.size());
         }
+        resolveRules();
+    }
+
+    /**
+     * 筛掉 {@code container_rules} 里用不了或明显写错的条目。
+     *
+     * <p>放在 {@code resolve()}（标签已绑定）而不是解析 JSON 的时候：{@code blocks} 引用不存在的
+     * 方块/标签，只有标签绑定之后才看得出来，而那种规则**永远匹配不上** ——
+     * 不说一声就成了静默失效。
+     */
+    private static void resolveRules() {
+        List<ContainerRule> usable = new ArrayList<>(rules.size());
+        for (ContainerRule rule : rules) {
+            if (rule.predicate().requiresNbt()) {
+                // 本模组的查询只有"方块 + 状态"，读不了方块实体也就读不了 NBT
+                LOGGER.warn("[ShelfLife] container_rules 里有一条带了 nbt 条件，本模组评估不了，已忽略：{}", rule);
+                continue;
+            }
+            if (rule.isMatchEverything()) {
+                LOGGER.warn("[ShelfLife] container_rules 里有一条既没写 blocks 也没写 state（那会命中所有方块），已忽略：{}", rule);
+                continue;
+            }
+            if (rule.hasEmptyBlocks()) {
+                LOGGER.warn("[ShelfLife] container_rules 里有一条的 blocks 一个方块都没解析出来（拼错了？），它永远匹配不上：{}", rule);
+            }
+            usable.add(rule);
+        }
+        rules = List.copyOf(usable);
+        if (!rules.isEmpty()) {
+            LOGGER.info("[ShelfLife] container_rules 生效 {} 条", rules.size());
+        }
     }
 
     public static EnvironmentSettings settings() {
         return settings;
     }
 
+    /**
+     * 某个方块（以及它的状态）作为容器时的修正。
+     *
+     * <p>顺序：**先 {@code container_rules}（倒序扫，后写的赢），没命中才回 {@code containers} 老表**。
+     * 也就是说"按状态区分的规则"更显式，会盖掉老表里针对同一个方块的条目。
+     *
+     * @param state 方块状态。传 {@code null} 表示调用方拿不到状态，这时只有"不带 state 条件"
+     *              的规则算命中（拿一个猜的状态去匹配比不匹配更糟）
+     */
+    @Nullable
+    public static ContainerModifier modifierFor(Block block, @Nullable BlockState state) {
+        List<ContainerRule> snapshot = rules;
+        if (!snapshot.isEmpty()) {
+            Holder<Block> holder = BuiltInRegistries.BLOCK.wrapAsHolder(block);
+            for (int i = snapshot.size() - 1; i >= 0; i--) {
+                ContainerRule rule = snapshot.get(i);
+                if (rule.matches(holder, state)) {
+                    return rule.modifier();
+                }
+            }
+        }
+        return byBlock.get(block);
+    }
+
+    /** 拿不到方块状态时的老重载。见 {@link #modifierFor(Block, BlockState)}。 */
     @Nullable
     public static ContainerModifier modifierFor(Block block) {
-        return byBlock.get(block);
+        return modifierFor(block, null);
     }
 }

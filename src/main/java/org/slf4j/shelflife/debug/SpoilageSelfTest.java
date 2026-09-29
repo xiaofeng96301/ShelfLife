@@ -4,11 +4,18 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.SimpleContainer;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.MenuType;
+import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.SlabBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.HopperBlockEntity;
+import net.minecraft.world.level.block.state.properties.SlabType;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
@@ -16,8 +23,10 @@ import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.shelflife.Shelflife;
+import org.slf4j.shelflife.api.ContainerLocators;
 import org.slf4j.shelflife.api.ShelfLifeApi;
 import org.slf4j.shelflife.block.ColdBoxBlockEntity;
+import org.slf4j.shelflife.logic.InventorySpoilage;
 import org.slf4j.shelflife.component.SpoilageData;
 import org.slf4j.shelflife.data.SpoilageConfig;
 import org.slf4j.shelflife.data.SpoilageManager;
@@ -25,6 +34,7 @@ import org.slf4j.shelflife.logic.EnvironmentSampler;
 import org.slf4j.shelflife.logic.SpoilageSettlement;
 
 import java.util.Locale;
+import java.util.Optional;
 
 /**
  * <b>临时调试场景</b>：在真服务器上复刻"漏斗往冷箱里塞快烂的鱼"，把每一步的组件值打出来。
@@ -65,6 +75,9 @@ public final class SpoilageSelfTest {
     private static boolean active;
     private static int step;
     private static int cooldown;
+
+    /** 断言失败的条数。跑完打一行汇总，日志里好搜。 */
+    private static int failures;
 
     private SpoilageSelfTest() {
     }
@@ -153,9 +166,27 @@ public final class SpoilageSelfTest {
                 step = 6;
                 cooldown = 40;
             }
+            case 6 -> {
+                testContainerRules(level);
+                step = 7;
+                cooldown = 20;
+            }
+            case 7 -> {
+                testContainerLocators(level);
+                step = 8;
+                cooldown = 20;
+            }
+            case 8 -> {
+                testMergeKeepsOverlay();
+                step = 9;
+                cooldown = 20;
+            }
             default -> {
-                dump(level, "再等一会儿");
-                LOG.info("========== ShelfLife 自测结束 ==========");
+                if (failures == 0) {
+                    LOG.info("========== ShelfLife 自测通过：0 项失败 ==========");
+                } else {
+                    LOG.error("========== ShelfLife 自测结束：{} 项失败 ==========", failures);
+                }
                 active = false;
                 server.halt(false);
             }
@@ -254,10 +285,130 @@ public final class SpoilageSelfTest {
         }
     }
 
+    // ------------------------------------------------------------------ 断言
+
+    /**
+     * 一条断言。不中断 —— 一次跑完把所有问题都报出来，比修一个跑一次快。
+     *
+     * <p>标记用 ASCII 的 {@code [ok]} / {@code [FAIL]} 而不是 ✓/✗：日志是按平台编码写的，
+     * 用符号的话在别的编码下看就是乱码，连 grep 都搜不到 —— 而这个夹具的全部价值就是能从日志里读出来。
+     */
+    private static void check(boolean ok, String what) {
+        if (ok) {
+            LOG.info("[ok]   {}", what);
+        } else {
+            failures++;
+            LOG.error("[FAIL] {}", what);
+        }
+    }
+
+    // ------------------------------------------------------------------ 三项新东西的验证
+
+    /**
+     * {@code container_rules}：同一个方块靠状态区分出不同的倍率，以及"带标签、不带 state"的规则。
+     *
+     * <p>用半砖当样本：{@code minecraft:oak_slab} 的 {@code type} 有 top/bottom 两个值，
+     * 而且它是纯原版方块 —— 不需要为此新增任何内容。
+     */
+    private static void testContainerRules(ServerLevel level) {
+        LOG.info("---------- container_rules：按方块状态匹配 ----------");
+        BlockPos top = BOX.offset(4, 0, 0);
+        BlockPos bottom = BOX.offset(4, 0, 1);
+        BlockPos wool = BOX.offset(4, 0, 2);
+
+        for (BlockPos pos : new BlockPos[]{top, bottom, wool}) {
+            level.setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState());
+        }
+        level.setBlockAndUpdate(top, Blocks.OAK_SLAB.defaultBlockState().setValue(SlabBlock.TYPE, SlabType.TOP));
+        level.setBlockAndUpdate(bottom, Blocks.OAK_SLAB.defaultBlockState().setValue(SlabBlock.TYPE, SlabType.BOTTOM));
+        level.setBlockAndUpdate(wool, Blocks.WHITE_WOOL.defaultBlockState());
+
+        check(rateAt(level, top) == 0.0F, "上半砖（state type=top）命中 rate_override 0");
+        check(Math.abs(rateAt(level, bottom) - 3.0F) < 1.0E-4F, "下半砖（state type=bottom）命中 3.0");
+        check(Math.abs(rateAt(level, wool) - 1.5F) < 1.0E-4F,
+                "羊毛（#minecraft:wool 标签 + 不带 state）命中 1.5 —— 标签是 HolderSet 原生支持的");
+    }
+
+    /**
+     * 容器定位：默认那条路（遍历槽位找方块实体）对机器容器**必然查不到**，
+     * 注册一个定位器之后必须能救回来。
+     *
+     * <p>{@link DummyMenu} 的槽位挂在一个 {@code SimpleContainer} 上 ——
+     * 既不是方块实体、也不是玩家背包，正好是 {@code SlotItemHandler} 那类机器容器的处境。
+     */
+    private static void testContainerLocators(ServerLevel level) {
+        LOG.info("---------- 容器定位扩展点 ----------");
+        check(ContainerLocators.size() == 0, "一开始注册表是空的");
+
+        // 这一步会走"查不到"的分支，日志里应该出现一条"反查不到容器位置"的 warn
+        check(InventorySpoilage.locate(new DummyMenu()).isEmpty(),
+                "没有定位器时查不到（并打一条 warn，日志里能看到）");
+
+        ContainerLocators.register(menu -> menu instanceof DummyMenu ? level.getBlockEntity(BOX) : null);
+
+        Optional<InventorySpoilage.ContainerLocation> located = InventorySpoilage.locate(new DummyMenu());
+        check(located.isPresent(), "注册定位器之后能反查到位置");
+        check(located.isPresent() && located.get().pos().equals(BOX),
+                "反查到的正是冷箱那个坐标（拿到的是方块实体自己的 level + pos）");
+        check(ContainerLocators.size() == 1, "注册表里现在有一个定位器");
+    }
+
+    /**
+     * 同一个物品被重复声明时**按字段继承**，不是整条替换。
+     *
+     * <p>夹具里给 {@code minecraft:cookie} 只写了 {@code ticks_per_spoilage}，
+     * 所以内置那条的 {@code overlay: true} 和自定义 {@code tint} 必须原样留着 ——
+     * 以前是整条替换，叠加层还在但颜色/透明度被冲回默认值，看起来像渲染坏了。
+     */
+    private static void testMergeKeepsOverlay() {
+        LOG.info("---------- 重复声明：按字段继承 ----------");
+        SpoilageConfig cookie = SpoilageManager.get(Items.COOKIE);
+        if (cookie == null) {
+            LOG.error("  ✗ 曲奇没有规则 —— 夹具没装上？");
+            failures++;
+            return;
+        }
+        check(cookie.ticksPerSpoilage() == 999, "后声明写了的字段被覆盖（tps 999）");
+        check(cookie.overlay(), "后声明**没写**的 overlay 继承下来了（还是 true）");
+        check(cookie.tint() == 0xFF46C49A, "后声明没写的 tint 也继承下来了（还是 #46C49A）");
+    }
+
+    /**
+     * 测试用菜单：槽位挂在一个 {@code SimpleContainer} 上，**不是方块实体**。
+     *
+     * <p>这正是 {@code SlotItemHandler} 那类机器容器的处境（它的槽位容器是一个共享的空
+     * {@code SimpleContainer}），用来验证"默认查不到"和"注册表能救回来"两条路。
+     */
+    private static final class DummyMenu extends AbstractContainerMenu {
+
+        private final SimpleContainer container = new SimpleContainer(9);
+
+        DummyMenu() {
+            super(MenuType.GENERIC_9x3, 0);
+            for (int i = 0; i < 9; i++) {
+                addSlot(new Slot(container, i, 0, 0));
+            }
+        }
+
+        @Override
+        public ItemStack quickMoveStack(Player player, int index) {
+            return ItemStack.EMPTY;
+        }
+
+        @Override
+        public boolean stillValid(Player player) {
+            return true;
+        }
+    }
+
     // ------------------------------------------------------------------ 读数
 
     private static float rateAt(ServerLevel level) {
-        return EnvironmentSampler.rateAt(level, BOX, level.getBlockState(BOX).getBlock());
+        return rateAt(level, BOX);
+    }
+
+    private static float rateAt(ServerLevel level, BlockPos pos) {
+        return EnvironmentSampler.rateAt(level, pos, level.getBlockState(pos).getBlock());
     }
 
     private static String contentsOf(ServerLevel level, BlockPos pos) {

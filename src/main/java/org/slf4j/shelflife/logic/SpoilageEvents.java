@@ -4,6 +4,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.profiling.ProfilerFiller;
 import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.level.block.Block;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.AddReloadListenerEvent;
@@ -26,6 +27,7 @@ import org.slf4j.shelflife.network.PlayerEnvironmentPayload;
 import org.slf4j.shelflife.network.SpoilageSyncPayload;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * <b>事件入口</b>。这个类只做一件事：把原版/NeoForge 的事件接到我们的逻辑上，方法都尽量薄。
@@ -158,12 +160,18 @@ public final class SpoilageEvents {
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
 
         AbstractContainerMenu menu = event.getContainer();
-        InventorySpoilage.ContainerLocation at = InventorySpoilage.locate(menu).orElseGet(
+        Optional<InventorySpoilage.ContainerLocation> located = InventorySpoilage.locate(menu);
+        // 反查不到时退回玩家位置：stillValid 保证玩家就在容器旁边，群系和湿度和它基本一致，
+        // 所以"大致采样"还说得过去（缺的只是容器修正，而那是没位置就查不出来的）。
+        //
+        // 但**方块要传 null**：传玩家脚下的方块等于"把玩家站着的那个方块当成容器"，
+        // 站在一块在 containers 表里的方块上就会给环境白加一份修正。
+        // 另外，反查不到的真正解法是让菜单实现 MenuContainerProvider / 注册 ContainerLocators ——
+        // locate 那边会为这种情况打一条 warn
+        InventorySpoilage.ContainerLocation at = located.orElseGet(
                 () -> new InventorySpoilage.ContainerLocation(player.level(), player.blockPosition()));
-        // 木桶 / 潜影盒这类内部用 SimpleContainer 承载的取不到方块实体，退回玩家位置 ——
-        // 反正 stillValid 已经保证玩家就在旁边，环境基本一致
-        EnvironmentSample sample = EnvironmentSampler.sampleAt(at.level(), at.pos(),
-                at.level().getBlockState(at.pos()).getBlock());
+        Block containerBlock = located.isPresent() ? at.level().getBlockState(at.pos()).getBlock() : null;
+        EnvironmentSample sample = EnvironmentSampler.sampleAt(at.level(), at.pos(), containerBlock);
 
         // 把这次采样整个发给客户端：它自己算不出来（不知道容器在世界的位置，也没有容器修正表，
         // 更读不到 createishot 的温度）。带上 containerId 让客户端只对"当前打开的就是这个菜单"采信

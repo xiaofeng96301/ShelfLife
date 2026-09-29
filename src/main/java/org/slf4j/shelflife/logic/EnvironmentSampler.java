@@ -4,6 +4,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.shelflife.api.ContainerClimate;
 import org.slf4j.shelflife.data.ContainerModifier;
@@ -47,7 +48,15 @@ public final class EnvironmentSampler {
         // 湿度只有群系这一个来源，两种模式都一样
         float humidity = climate.downfall();
 
-        ContainerModifier modifier = containerBlock == null ? null : EnvironmentManager.modifierFor(containerBlock);
+        ContainerModifier modifier = null;
+        if (containerBlock != null) {
+            BlockState state = level.getBlockState(pos);
+            // container_rules 要按状态匹配，所以要读状态。但**位置上的方块和调用方声明的方块
+            // 不一致时只认老表** —— 拿一个别的方块的状态去匹配会命中错误的规则
+            modifier = state.getBlock() == containerBlock
+                    ? EnvironmentManager.modifierFor(containerBlock, state)
+                    : EnvironmentManager.modifierFor(containerBlock);
+        }
         // 方块实体可以自己报"此刻多冷"（通电冰箱那种动态冷源），它覆盖数据包的静态修正 ——
         // 见 ContainerClimate。没有实体承载的容器（木桶、潜影盒）问不到，就只用数据包
         if (containerBlock != null) {

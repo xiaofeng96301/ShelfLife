@@ -149,7 +149,11 @@ my_pack/
   固定温度的容器**完全不需要**这一条，也就**不需要任何 Java**
 - `ShelfLifeApi.isManaged / spoilageOf / maxSpoilageOf / rateAt / replacementIfSpoiled`
 - `ContainerClimate`：方块实体实现它就能当**动态**冷源/热源，它**覆盖**数据包的静态修正。
-  `climate()` 是**纯查询**（模组不会因为它去结算任何物品，也没有缓存），**必须便宜**
+  `climate()` 是**纯查询**（模组不会因为它去结算任何物品，也没有缓存），**必须便宜**。
+  **只在数据包表达不了时才用它**（动态状态 / 需要 NBT）
+- `MenuContainerProvider` / `ContainerLocators`：**告诉 ShelfLife"这个菜单背后是哪个方块"**。
+  默认那条路（遍历槽位找方块实体）对用 `SlotItemHandler` 的机器**必然失败**，
+  后果是机器里的食物被按**玩家脚下**的倍率记账 —— 自己的菜单实现前者即可，别人的菜单用后者注册
 
 > **别把简单的事情做复杂**：`"containers": { "你的方块": { "temperature": -4.0 } }` 一行数据包
 > 就够表达"我的方块是个冰箱"，这是**静态**容器的正道，冷箱自己就是这么实现的。
@@ -185,6 +189,11 @@ my_pack/
 - **`settings` 是整块覆盖、不是逐字段合并**：只写一项的话，其余字段回到**内置默认值**
   （而不是内置数据包那份 `environment.json` 的值），看着就是"改了没生效"；
   `containers` 是按 key 合并的，随便什么文件名都行
+- **重复声明同一个物品是按字段继承的**，不是整条替换：后一条只覆盖它写了的字段
+  （`result`/`tint`/`overlay` 没写就留着上一条的）。想显式重置就写出来（`"overlay": false`）
+- **同一个方块的两种状态要不同冷源**（比如冷冻柜上下半）→ 用 `spoilage_env` 里的
+  `container_rules`（`{"blocks": ..., "state": {...}}`，形状就是原版 `BlockPredicate`），
+  不用写 Java
 - 条件用 `neoforge:conditions`（模组已自己包好，直接写）
 
 ## 从源码构建

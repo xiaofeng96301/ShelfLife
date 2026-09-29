@@ -35,22 +35,59 @@ import java.util.Optional;
  */
 public record SpoilageRule(List<Entry> entries) {
 
-    /** 一个物品引用（具体 id 或 {@code #标签}）加它自己完整的数值。 */
-    public record Entry(String itemRef, int maxSpoilage, int ticksPerSpoilage, ResourceLocation result, int tint,
-                        boolean overlay) {
+    /**
+     * 一个物品引用（具体 id 或 {@code #标签}）加它自己完整的数值。
+     *
+     * <p>{@code result} / {@code tint} / {@code overlay} 是 {@link Optional}，
+     * 因为<strong>要区分"没写"和"写了默认值"</strong>：没写表示"继承之前那条，
+     * 或者用默认值"，写了就盖掉。见 {@link #mergeOver}。
+     *
+     * <p>两个数值不这样处理：它们在两种写法下都是"必须给出"的（形态二可以用顶层的默认值，
+     * 但那也是这个文件明确写了的），所以永远是普通 int。
+     */
+    public record Entry(String itemRef, int maxSpoilage, int ticksPerSpoilage,
+                        Optional<ResourceLocation> result, Optional<Integer> tint, Optional<Boolean> overlay) {
+
+        /** 补齐默认值，得到一个完整配置。这个物品第一次被声明时用这个。 */
+        public SpoilageConfig toConfig() {
+            return new SpoilageConfig(maxSpoilage, ticksPerSpoilage,
+                    result.orElse(SpoilageConfig.DEFAULT_RESULT),
+                    tint.orElse(SpoilageConfig.DEFAULT_TINT),
+                    overlay.orElse(false));
+        }
+
+        /**
+         * 覆盖到已有配置上：<b>只覆盖这条声明真正写了的字段</b>，没写的继承 {@code previous}。
+         *
+         * <p>这条规则是为一个很容易踩的坑准备的：曲奇的模型带霉斑叠加层（{@code overlay: true}
+         * 加一个自定义 {@code tint}），另一份数据包只想改它的保质期，于是写了一条
+         * {@code "minecraft:cookie": { "ticks_per_spoilage": 3600 }} ——
+         * 在"整条替换"的旧语义下，这条会把 {@code overlay} 和 {@code tint} 一起冲回默认值，
+         * 表现是**叠加层还在、但它的透明度和颜色被换掉了**，看起来像渲染坏了，其实是数据被覆盖了。
+         * 改成按字段继承之后，没写的字段原样留着。
+         *
+         * <p>要**显式重置**某个字段，就把它写出来（{@code "overlay": false}）——
+         * 省略 = 继承，写明 = 覆盖。
+         */
+        public SpoilageConfig mergeOver(SpoilageConfig previous) {
+            return new SpoilageConfig(maxSpoilage, ticksPerSpoilage,
+                    result.orElse(previous.result()),
+                    tint.orElse(previous.tint()),
+                    overlay.orElse(previous.overlay()));
+        }
     }
 
     // ------------------------------------------------------------------ 形态一
 
     public record ItemList(List<String> items, int maxSpoilage, int ticksPerSpoilage,
-                           ResourceLocation result, int tint, boolean overlay) {
+                           Optional<ResourceLocation> result, Optional<Integer> tint, Optional<Boolean> overlay) {
         static final Codec<ItemList> CODEC = RecordCodecBuilder.create(instance -> instance.group(
                 Codec.STRING.listOf().fieldOf("items").forGetter(ItemList::items),
                 Codec.intRange(1, Integer.MAX_VALUE).fieldOf("max_spoilage").forGetter(ItemList::maxSpoilage),
                 Codec.intRange(1, Integer.MAX_VALUE).fieldOf("ticks_per_spoilage").forGetter(ItemList::ticksPerSpoilage),
-                ResourceLocation.CODEC.optionalFieldOf("result", SpoilageConfig.DEFAULT_RESULT).forGetter(ItemList::result),
-                SpoilageConfig.TINT_CODEC.optionalFieldOf("tint", SpoilageConfig.DEFAULT_TINT).forGetter(ItemList::tint),
-                Codec.BOOL.optionalFieldOf("overlay", false).forGetter(ItemList::overlay)
+                ResourceLocation.CODEC.optionalFieldOf("result").forGetter(ItemList::result),
+                SpoilageConfig.TINT_CODEC.optionalFieldOf("tint").forGetter(ItemList::tint),
+                Codec.BOOL.optionalFieldOf("overlay").forGetter(ItemList::overlay)
         ).apply(instance, ItemList::new));
     }
 
@@ -96,8 +133,8 @@ public record SpoilageRule(List<Entry> entries) {
         if (either.left().isPresent()) {
             ItemList list = either.left().get();
             return DataResult.success(new SpoilageRule(list.items().stream()
-                    .map(ref -> new Entry(ref, list.maxSpoilage(), list.ticksPerSpoilage(), list.result(),
-                            list.tint(), list.overlay()))
+                    .map(ref -> new Entry(ref, list.maxSpoilage(), list.ticksPerSpoilage(),
+                            list.result(), list.tint(), list.overlay()))
                     .toList()));
         }
         return fromMap(either.right().orElseThrow());
@@ -113,9 +150,11 @@ public record SpoilageRule(List<Entry> entries) {
                 return DataResult.error(() -> "物品 " + item.getKey()
                         + " 既没有自己的 max_spoilage / ticks_per_spoilage，顶层也没给默认值");
             }
-            ResourceLocation result = patch.result().or(map::result).orElse(SpoilageConfig.DEFAULT_RESULT);
-            int tint = patch.tint().or(map::tint).orElse(SpoilageConfig.DEFAULT_TINT);
-            boolean overlay = patch.overlay().or(map::overlay).orElse(false);
+            // 这里**不再补默认值**，只把"顶层写了、物品没写"归到顶层。
+            // 两边都没写就保持 empty —— 那表示"继承别的文件 / 用默认值"，由 SpoilageManager 决定
+            Optional<ResourceLocation> result = patch.result().or(map::result);
+            Optional<Integer> tint = patch.tint().or(map::tint);
+            Optional<Boolean> overlay = patch.overlay().or(map::overlay);
             entries.add(new Entry(item.getKey(), max.get(), ticks.get(), result, tint, overlay));
         }
         return DataResult.success(new SpoilageRule(List.copyOf(entries)));
@@ -127,9 +166,9 @@ public record SpoilageRule(List<Entry> entries) {
             items.put(entry.itemRef(), new Patch(
                     Optional.of(entry.maxSpoilage()),
                     Optional.of(entry.ticksPerSpoilage()),
-                    Optional.of(entry.result()),
-                    Optional.of(entry.tint()),
-                    Optional.of(entry.overlay())));
+                    entry.result(),
+                    entry.tint(),
+                    entry.overlay()));
         }
         return new ItemMap(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
                 Optional.empty(), items);
