@@ -1,0 +1,17 @@
+{
+  "settings": {
+    "reference_temperature": 0.8,
+    "doubling_per": 0.8,
+    "humidity_base": 0.75,
+    "humidity_span": 0.5,
+    "min_multiplier": 0.05,
+    "max_multiplier": 4.0,
+    "temperature_source": "biome"
+  },
+  "containers": {
+    "minecraft:barrel": { "temperature": -0.1 },
+    "shelflife:cold_box": { "temperature": -4.0 },
+    "#minecraft:shulker_boxes": { "temperature": -1.0, "humidity": -0.2 },
+    "minecraft:furnace": { "rate_override": 20.0 }
+  }
+}

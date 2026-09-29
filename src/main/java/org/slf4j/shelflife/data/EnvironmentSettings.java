@@ -132,6 +132,11 @@ public record EnvironmentSettings(float referenceTemperature, float doublingPer,
      * <p>只在服务端解析数据包时调用一次，之后同步给客户端的永远是解析过的值 —— 否则客户端会按
      * <b>自己的</b>模组列表各解析一遍，没装 createishot 的客户端和装了它的服务器会算出两个不同的倍率。
      */
+    /** 温度是不是来自 createishot。客户端和服务端都会用到这个判断，所以放在这里。 */
+    public boolean isCelsius() {
+        return source == TemperatureSource.CREATEISHOT;
+    }
+
     public EnvironmentSettings resolved(boolean createishotLoaded) {
         TemperatureSource concrete = source.resolve(createishotLoaded);
         if (concrete == source) return this;

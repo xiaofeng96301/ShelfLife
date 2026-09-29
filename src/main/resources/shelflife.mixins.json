@@ -5,9 +5,12 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "AbstractContainerMenuMixin",
+    "BaseContainerBlockEntityMixin",
     "HopperBlockEntityMixin",
+    "InvWrapperMixin",
     "InventoryMixin",
     "ItemEntityMixin",
+    "SidedInvWrapperMixin",
     "SimpleContainerMixin",
     "SlotMixin"
   ],

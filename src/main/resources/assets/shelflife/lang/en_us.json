@@ -16,5 +16,13 @@
   "tooltip.shelflife.formula.clamped": " (clamped to %s)",
   "item.shelflife.rotten_leftovers": "Rotten Leftovers",
   "item.shelflife.rotten_meat": "Rotten Meat",
-  "item.shelflife.moldy_cookie": "Moldy Cookie"
+  "item.shelflife.moldy_cookie": "Moldy Cookie",
+  "commands.shelflife.spoilage.no_player": "This command needs a player holding an item",
+  "commands.shelflife.spoilage.empty_hand": "Your main hand is empty",
+  "commands.shelflife.spoilage.not_managed": "This item has no shelf-life rule in the loaded datapacks",
+  "commands.shelflife.spoilage.no_data": "This item carries no shelf-life data",
+  "commands.shelflife.spoilage.get.none": "%s: no shelf-life data",
+  "commands.shelflife.spoilage.get.ok": "%s: %s / %s spoiled, timestamp %s",
+  "commands.shelflife.spoilage.set.ok": "%s: %s / %s spoiled",
+  "commands.shelflife.spoilage.clear.ok": "%s: shelf-life data cleared"
 }

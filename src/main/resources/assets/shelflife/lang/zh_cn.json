@@ -16,5 +16,13 @@
   "tooltip.shelflife.formula.clamped": "（上下限 %s）",
   "item.shelflife.rotten_leftovers": "腐烂剩菜",
   "item.shelflife.rotten_meat": "腐烂肉类",
-  "item.shelflife.moldy_cookie": "发霉曲奇"
+  "item.shelflife.moldy_cookie": "发霉曲奇",
+  "commands.shelflife.spoilage.no_player": "这条指令需要由玩家手持物品执行",
+  "commands.shelflife.spoilage.empty_hand": "主手是空的",
+  "commands.shelflife.spoilage.not_managed": "这个物品在已加载的数据包里没有保质期规则",
+  "commands.shelflife.spoilage.no_data": "这个物品上没有保质期数据",
+  "commands.shelflife.spoilage.get.none": "%s：没有保质期数据",
+  "commands.shelflife.spoilage.get.ok": "%s：已腐坏 %s / %s，时间戳 %s",
+  "commands.shelflife.spoilage.set.ok": "%s：已腐坏 %s / %s",
+  "commands.shelflife.spoilage.clear.ok": "%s：已清除保质期数据"
 }

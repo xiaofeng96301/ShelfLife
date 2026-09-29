@@ -19,6 +19,8 @@ hs_err_pid*
 
 # Common working directory
 run
+# 专用服务器自测的工作目录（见 build.gradle 的 server run）
+run-server
 
 # MixinMCP auto-injected rules
 .cursor/rules/minecraft-mod-project.mdc

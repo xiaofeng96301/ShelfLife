@@ -5,6 +5,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.Block;
 import org.jetbrains.annotations.Nullable;
+import org.slf4j.shelflife.api.ContainerClimate;
 import org.slf4j.shelflife.data.ContainerModifier;
 import org.slf4j.shelflife.data.EnvironmentManager;
 import org.slf4j.shelflife.data.EnvironmentSettings;
@@ -47,6 +48,14 @@ public final class EnvironmentSampler {
         float humidity = climate.downfall();
 
         ContainerModifier modifier = containerBlock == null ? null : EnvironmentManager.modifierFor(containerBlock);
+        // 方块实体可以自己报"此刻多冷"（通电冰箱那种动态冷源），它覆盖数据包的静态修正 ——
+        // 见 ContainerClimate。没有实体承载的容器（木桶、潜影盒）问不到，就只用数据包
+        if (containerBlock != null) {
+            ContainerModifier fromEntity = ContainerClimate.climateOf(level.getBlockEntity(pos));
+            if (fromEntity != null) {
+                modifier = fromEntity;
+            }
+        }
         if (modifier != null) {
             humidity = Math.clamp(humidity + modifier.humidity(), 0.0F, 1.0F);
         }

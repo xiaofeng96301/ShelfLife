@@ -71,7 +71,12 @@ neoForge {
         server {
             server()
             programArgument '--nogui'
+            // 单独一个目录：客户端的 run/ 里有你的存档和设置，别混在一起
+            gameDirectory = project.file('run-server')
             systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+            // 服务器自测场景（默认不跑）。跑法：./gradlew runServer -PshelflifeSelfTest=true
+            // 用 Gradle 属性而不是 -D：系统属性不会进配置缓存的输入，改了它不会失效，白排查一轮
+            systemProperty 'shelflife.selftest', (project.findProperty('shelflifeSelfTest') ?: 'false')
         }
 
         // This run config launches GameTestServer and runs all registered gametests, then exits.
@@ -163,6 +168,17 @@ dependencies {
     // 走和 Curios 一样的路子：compileOnly 供编译，runtimeOnly 只进开发运行期，都不会打进发布包。
     compileOnly files('libs/createishot-1.0-SNAPSHOT.jar')
     runtimeOnly files('libs/createishot-1.0-SNAPSHOT.jar')
+
+    // 另外两个可选依赖：走和 createishot 一样的路子 —— compileOnly 供编译，runtimeOnly 只进开发运行期。
+    // 两个都不会被打进发布包（不是 jarJar，只是开发环境的 classpath）。
+    // 需要 runtimeOnly 的理由：管道兼容的钩子只有把 mod 真加载起来才验证得了，
+    // 之前只用 compileOnly 的后果是"游戏里根本没有 Mekanism / Pipez"，压根没法测。
+    compileOnly files('libs/mekanism-1.21.1-10.7.19.85.jar')
+    runtimeOnly files('libs/mekanism-1.21.1-10.7.19.85.jar')
+    compileOnly files('libs/pipez-neoforge-1.21.1-1.2.31.jar')
+    runtimeOnly files('libs/pipez-neoforge-1.21.1-1.2.31.jar')
+    // Create 不在这里：它由上面的 implementation("com.simibubi.create:create-...") 提供编译 + 运行期，
+    // 原来那份 libs/create-*.jar 已经删掉了（留着只会是个指向不存在文件的死引用）。
 
     def runModsDir = file('run/mods')
     if (runModsDir.exists() && runModsDir.listFiles()) {

@@ -1,0 +1,10 @@
+{
+  "max_spoilage": 100,
+  "ticks_per_spoilage": 840,
+  "result": "shelflife:rotten_leftovers",
+  "items": {
+    "minecraft:poisonous_potato": { "ticks_per_spoilage": 240, "result": "shelflife:rotten_meat" },
+    "minecraft:spider_eye": { "ticks_per_spoilage": 3600, "tint": "#46c49a", "overlay": true },
+    "minecraft:fermented_spider_eye": { "ticks_per_spoilage": 480, "result": "minecraft:air" }
+  }
+}

@@ -56,22 +56,38 @@ public final class SpoilageMerge {
     }
 
     /**
-     * 把 {@code target} 的保质期改成与 {@code source} 的加权平均。
+     * 把 {@code target} 的保质期改成与来源的加权平均 —— <b>来源数据由调用方先取好</b>。
      *
-     * <p><b>必须在 {@code target.grow(amount)} 之前调用</b>：本方法读的是合并前的数量。
-     * 前提是 {@link #canStackTogether} 已成立（即 {@code target} 带保质期数据）。
+     * <p>为什么要专门有这么一个重载：搬运物品的各个调用点里，写入发生的时机不一样，
+     * 有一个地方的来源堆<b>到写入时已经读不出自己的组件了</b>。
      *
-     * @param amount 即将并入的数量，不是 source 的总数 —— 目标堆可能只装得下一部分
+     * <p>具体是漏斗：{@code HopperBlockEntity.tryMoveInItem} 的顺序是<b>先 shrink 再 grow</b>
+     * （1.21.1 的第 350 / 351 行），而被搬走的那一堆 shrink 之后数量为 0；偏偏
+     * {@code ItemStack.getComponents()} 在 {@code count <= 0} 时返回 {@code DataComponentMap.EMPTY}，
+     * 于是 {@code source.get(SPOILAGE)} 变成 {@code null}，平均就按"来源是全新（0 点）"算 ——
+     * 目标堆被稀释成一半，保质期凭空翻倍。每漏进来一个就再减半一次，很快就顶到上限。
+     *
+     * <p>所以：<b>能不能在这一刻读来源堆，取决于调用点的顺序</b>。判定和写入之间隔了 shrink 的，
+     * 必须在判定那一刻把 {@link SpoilageData} 取好再传进来（见 {@code HopperBlockEntityMixin}）；
+     * 其余调用点判定即写入，用下面那个 {@code ItemStack} 重载就行。
+     *
+     * @param sourceData 来源堆<b>在合并判定时</b>的数据。{@code null} 表示它本来就没有组件（算全新）
+     * @param amount     即将并入的数量，不是来源的总数 —— 目标堆可能只装得下一部分
      */
-    public static void averageBeforeMerge(ItemStack target, ItemStack source, int amount) {
+    public static void averageBeforeMerge(ItemStack target, @Nullable SpoilageData sourceData, int amount) {
         DataComponentType<SpoilageData> type = Shelflife.SPOILAGE.get();
         SpoilageData targetData = target.get(type);
         if (targetData == null) return;   // 防御：不变量被破坏时宁可不写，也不能凭空造组件
 
-        SpoilageData averaged = averaged(targetData, source.get(type), target.getCount(), amount);
+        SpoilageData averaged = averaged(targetData, sourceData, target.getCount(), amount);
         if (averaged != null) {
             target.set(type, averaged);
         }
+    }
+
+    /** 现从活着的来源堆上取组件。适用于"判定与写入之间没有动过来源堆"的调用点。 */
+    public static void averageBeforeMerge(ItemStack target, ItemStack source, int amount) {
+        averageBeforeMerge(target, source.get(Shelflife.SPOILAGE.get()), amount);
     }
 
     /**

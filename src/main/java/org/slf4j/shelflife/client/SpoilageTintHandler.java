@@ -2,6 +2,7 @@ package org.slf4j.shelflife.client;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.color.item.ItemColors;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.util.Mth;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -17,6 +18,8 @@ import org.slf4j.shelflife.data.SpoilageConfig;
 import org.slf4j.shelflife.logic.SpoilageSettlement;
 
 import java.util.Collection;
+import java.util.IdentityHashMap;
+import java.util.Map;
 
 /**
  * 按保质期给食物染色 —— 食物在背包、快捷栏、乃至掉在地上时都会逐渐变暗发绿。
@@ -57,6 +60,18 @@ public final class SpoilageTintHandler {
 
     /** 完全透明。叠加层"还没长霉"时必须用它 —— 用白色会把整张霉斑图直接铺出来。 */
     private static final int TRANSPARENT = 0x00FFFFFF;
+
+    /** 开着界面时深度重算间隔（tick）：1 秒。 */
+    private static final int DEPTH_REFRESH_ACTIVE = 20;
+
+    /** 没开界面时：10 秒。屏幕外的东西没人盯着看。 */
+    private static final int DEPTH_REFRESH_IDLE = 200;
+
+    /** 按物品堆缓存腐烂深度，见 {@link #rotDepth}。只在客户端主线程访问，不需要同步。 */
+    private static final Map<ItemStack, Float> depthCache = new IdentityHashMap<>();
+
+    /** 上次清空缓存时的游戏刻。 */
+    private static long depthCacheStamp = Long.MIN_VALUE;
 
     /** 由 {@link #onRegisterItemColors} 存下来，供配置表变动时补登记。 */
     private static ItemColors itemColors;
@@ -114,21 +129,57 @@ public final class SpoilageTintHandler {
     }
 
     /**
+     * 腐烂深度 0~1，带缓存。
+     *
+     * <p>{@code ItemColor} 是**每帧、每个物品、每个面**都会被问一次的，而深度一秒才变一点点 ——
+     * 所以按物品堆缓存，{@link #DEPTH_REFRESH_TICKS} 才重算一次。
+     *
+     * <p>用 {@link IdentityHashMap} 而不是普通 Map：{@code ItemStack} 的 {@code equals/hashCode}
+     * 是按组件逐项比的，拿它当键既慢又会把"内容相同的不同堆"混成一个 —— 这里要的是同一个对象。
+     * 缓存整批清空而不是逐条过期：条目数天然被"这轮渲染过的堆"限住，不会无界增长。
+     */
+    private static float rotDepth(ItemStack stack, SpoilageConfig config) {
+        Level level = Minecraft.getInstance().level;
+        if (level == null) return 0.0F;
+
+        long now = level.getGameTime();
+        if (now - depthCacheStamp >= depthRefreshTicks()) {
+            depthCache.clear();
+            depthCacheStamp = now;
+        }
+        Float cached = depthCache.get(stack);
+        if (cached != null) return cached;
+
+        float depth = computeRotDepth(stack, config, level, now);
+        depthCache.put(stack, depth);
+        return depth;
+    }
+
+    /**
+     * 深度最多多久重算一次。
+     *
+     * <p>开着界面时 1 秒（玩家正盯着它看），没开时 10 秒 —— 屏幕外的东西颜色变得慢，
+     * 没人会注意，而每秒重算整个背包是白烧的。和工具提示的刷新档位保持一致。
+     */
+    private static int depthRefreshTicks() {
+        return Minecraft.getInstance().screen instanceof AbstractContainerScreen<?>
+                ? DEPTH_REFRESH_ACTIVE
+                : DEPTH_REFRESH_IDLE;
+    }
+
+    /**
      * 腐烂深度 0~1：消耗掉 {@link #TINT_START_REMAINING} 之外的部分才开始算。
      *
      * <p>用惰性推算而不是组件里存的值 —— 背包不再定时结算，存的值可能落后。
      * 倍率按物品取（容器里的和背包里的可能是两个倍率），必须和 tooltip 走同一个函数，
      * 否则颜色和数字会对不上。这里用的是带小数的版本，颜色才是平滑渐变而不是一跳一跳。
      */
-    private static float rotDepth(ItemStack stack, SpoilageConfig config) {
+    private static float computeRotDepth(ItemStack stack, SpoilageConfig config, Level level, long now) {
         SpoilageData data = stack.get(Shelflife.SPOILAGE.get());
         if (data == null || data.maxSpoilage() <= 0) return 0.0F;
 
-        Level level = Minecraft.getInstance().level;
-        if (level == null) return 0.0F;
-
         double consumed = SpoilageSettlement.effectiveFractional(data, config,
-                ClientEnvironmentCache.rateFor(stack), level.getGameTime());
+                ClientEnvironmentCache.rateFor(stack), now);
         float remaining = 1.0F - (float) (consumed / data.maxSpoilage());
         if (remaining >= TINT_START_REMAINING) return 0.0F;
 

@@ -1,0 +1,8 @@
+{
+  "neoforge:conditions": [
+    { "type": "neoforge:mod_loaded", "modid": "definitely_not_a_real_mod_xyz" }
+  ],
+  "items": {
+    "definitely_not_a_real_mod_xyz:thing": { "max_spoilage": 100, "ticks_per_spoilage": 100 }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "items": ["minecraft:tropical_fish", "#minecraft:fishes"],
+  "max_spoilage": 100,
+  "ticks_per_spoilage": 840,
+  "result": "shelflife:rotten_leftovers"
+}

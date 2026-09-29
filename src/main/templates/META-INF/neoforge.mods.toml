@@ -82,6 +82,29 @@ versionRange = "*"
 ordering = "AFTER"
 side = "BOTH"
 
+# 下面三个也是可选依赖：装了它们之后，用它们的物品管道 / 溜槽从容器里抽物品时，
+# 会像原版漏斗一样触发一次结算（见 "容器抽取时刷新时间戳"）。不装则完全不影响。
+[[dependencies."${mod_id}"]]
+modId = "create"
+type = "optional"
+versionRange = "*"
+ordering = "AFTER"
+side = "BOTH"
+
+[[dependencies."${mod_id}"]]
+modId = "mekanism"
+type = "optional"
+versionRange = "*"
+ordering = "AFTER"
+side = "BOTH"
+
+[[dependencies."${mod_id}"]]
+modId = "pipez"
+type = "optional"
+versionRange = "*"
+ordering = "AFTER"
+side = "BOTH"
+
 # Features are specific properties of the game environment, that you may want to declare you require. This example declares
 # that your mod requires GL version 3.2 or higher. Other features will be added. They are side aware so declaring this won't
 # stop your mod loading on the server for example.
