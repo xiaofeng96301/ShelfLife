@@ -16,6 +16,7 @@ import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.shelflife.Shelflife;
+import org.slf4j.shelflife.api.ShelfLifeApi;
 import org.slf4j.shelflife.block.ColdBoxBlockEntity;
 import org.slf4j.shelflife.component.SpoilageData;
 import org.slf4j.shelflife.data.SpoilageConfig;
@@ -142,6 +143,16 @@ public final class SpoilageSelfTest {
                 step = 4;
                 cooldown = 40;
             }
+            case 4 -> {
+                testSettleContainer(level, true);
+                step = 5;
+                cooldown = 40;
+            }
+            case 5 -> {
+                testSettleContainer(level, false);
+                step = 6;
+                cooldown = 40;
+            }
             default -> {
                 dump(level, "再等一会儿");
                 LOG.info("========== ShelfLife 自测结束 ==========");
@@ -189,6 +200,44 @@ public final class SpoilageSelfTest {
 
         settleBox(level);
         LOG.info("冷箱内容（模拟开箱结算后） = {}", contentsOf(level, BOX));
+    }
+
+    /**
+     * 验证 {@code ShelfLifeApi.settleContainer}（"动态容器改了状态就自己结清"那套）。
+     *
+     * <p>往冷箱的 1 号格放一条"20 分钟前开始计时、但一点都还没烂"的鱼，然后调 API 结清。
+     * 两次调的差别只有 {@code containerBlock} 传不传 —— 也就是"按冷箱的环境结"还是"按常温结"，
+     * 这正是"先改状态再结清"会犯的错：同一段经过的时间，倍率取错就会算出完全不同的结果。
+     *
+     * @param asContainer {@code true} = 按冷箱环境（×0.05）→ 期望 cur=10；
+     *                    {@code false} = 只用群系（×0.95）→ 期望 cur 顶到 100 并变成腐烂物
+     */
+    private static void testSettleContainer(ServerLevel level, boolean asContainer) {
+        if (!(level.getBlockEntity(BOX) instanceof ColdBoxBlockEntity box)) {
+            LOG.error("冷箱的方块实体没建出来");
+            return;
+        }
+        SpoilageConfig config = SpoilageManager.get(Items.COD);
+        int max = config != null ? config.maxSpoilage() : 100;
+        long now = level.getGameTime();
+
+        // 时间戳推到 20 分钟前：这段时间的账一笔都还没记
+        box.setItem(1, new ItemStack(Items.COD));
+        box.getItem(1).set(Shelflife.SPOILAGE.get(), new SpoilageData(0, max, now - 24000));
+
+        float rate = asContainer
+                ? EnvironmentSampler.rateAt(level, BOX, level.getBlockState(BOX).getBlock())
+                : EnvironmentSampler.rateAt(level, BOX, null);
+        LOG.info("---------- settleContainer 测试（containerBlock {}） 期望 = {} ----------",
+                asContainer ? "传冷箱" : "传 null（常温）",
+                asContainer ? "cur=10" : "cur=100 并转化成腐烂物");
+        LOG.info("结清前 = {}", describe(level, box.getItem(1), rate));
+
+        int changed = ShelfLifeApi.settleContainer(box, level, BOX,
+                asContainer ? level.getBlockState(BOX).getBlock() : null);
+
+        LOG.info("结清后（改写了 {} 格，用的倍率 {}）= {}", changed, rate,
+                describe(level, box.getItem(1), rate));
     }
 
     /** 复刻 {@code PlayerContainerEvent.Open} 对容器做的那一次结算。 */

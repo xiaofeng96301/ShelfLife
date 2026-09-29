@@ -29,15 +29,19 @@ NeoForge 1.21.1 的食物保质期模组。食物会随时间腐烂，烂到头�
 
 ## 快速上手：让一个物品会腐烂
 
-1. 建一个数据包（或者直接放进你自己 mod 的 `src/main/resources/data/<你的modid>/`）：
+1. 建一个数据包（或者直接放进你自己 mod 的 `src/main/resources/data/` 下）：
 
 ```
 my_pack/
 ├── pack.mcmeta                     { "pack": { "pack_format": 48 } }
-└── data/mymod/
+└── data/shelflife/                 ← 推荐就用这个命名空间，理由见 docs/datapack.md §2.6
     ├── food_spoilage/my_foods.json
     └── spoilage_env/my_env.json
 ```
+
+> **文件放哪 ≠ 规则管哪些物品。** 文件放在 `shelflife` 命名空间下，
+> 里面的物品 id 照样写你自己的（`"mymod:cheese"`）。这样做的唯一目的是让
+> **覆盖顺序变成单纯按文件名排**，避开"path 相同就比 namespace"那条反直觉规则。
 
 2. `food_spoilage/my_foods.json` —— 让奶酪 8 小时烂完、香肠 2 天烂完：
 
@@ -124,6 +128,9 @@ my_pack/
 （`"shelflife:cold_box": { "temperature": -4.0 }`），所以改它是改一个 json 数字的事，
 不用动代码。默认偏移会撞到倍率下限，得到约 ×0.05，也就是 **20 倍保质期**。
 
+它是**静态**冰箱：冷源就是上面那一行数据包，**不需要任何 Java**。
+（`ContainerClimate` 那个接口是给"通电才冷"这类**动态**容器准备的，冷箱用不上。）
+
 它**不会和原版箱子连成双联箱**（没有继承 `ChestBlock`），是个独立的小箱子。
 
 ## 给其他模组的 Java API
@@ -137,9 +144,16 @@ my_pack/
 - `ShelfLifeApi.settleStack(stack, level, pos, block)` —— **搬运物品时该调的就是它**，
   用**来源容器**的位置调。不调的话，"它在来源容器里待的那段时间"会被记到目的地的环境上
   （最典型：从普通箱子抽进冷箱，箱子里的那几小时被当成在冷箱里度过 = 白冻）
+- `ShelfLifeApi.settleContainer(container, level, pos, block)` —— **动态容器状态要变时调它**
+  （通电→断电、燃料烧完），而且**必须在改状态之前**调，这样结清的是"旧倍率那一段时间"。
+  固定温度的容器**完全不需要**这一条，也就**不需要任何 Java**
 - `ShelfLifeApi.isManaged / spoilageOf / maxSpoilageOf / rateAt / replacementIfSpoiled`
-- `ContainerClimate`：方块实体实现它就能当**动态**冷源（通电才冷、燃料烧完就停），
-  它**覆盖**数据包的静态修正。`climate()` 每次采样都会被调用，**必须便宜**
+- `ContainerClimate`：方块实体实现它就能当**动态**冷源/热源，它**覆盖**数据包的静态修正。
+  `climate()` 是**纯查询**（模组不会因为它去结算任何物品，也没有缓存），**必须便宜**
+
+> **别把简单的事情做复杂**：`"containers": { "你的方块": { "temperature": -4.0 } }` 一行数据包
+> 就够表达"我的方块是个冰箱"，这是**静态**容器的正道，冷箱自己就是这么实现的。
+> 上面那两个接口是给**动态**容器（状态会自己变）和**搬运物品的模组**准备的。
 
 > 本模组自己已经挂了原版漏斗、`InvWrapper` / `SidedInvWrapper` 的抽取、
 > 以及 `BaseContainerBlockEntity#removeItem`，所以 Create / Mekanism / Pipez 这类
@@ -149,6 +163,7 @@ my_pack/
 
 - 食物规则：`data/<命名空间>/food_spoilage/*.json`
 - 环境曲线与容器修正：`data/<命名空间>/spoilage_env/*.json`
+- **推荐用 `data/shelflife/`**（和内置同一个命名空间）
 
 内置数据包在 `src/main/resources/data/shelflife/` 下，可以直接当范例抄：
 
@@ -162,11 +177,13 @@ my_pack/
 
 几条最容易踩的先放在这：
 
-- **文件名排序是「先比 path、再比 namespace」，后者赢。**
-  你写 `data/mypack/food_spoilage/vanilla_foods.json` 改原版苹果，
-  path 和内置的打平 → 比 namespace → `mypack` 在前 → **你的被内置的盖掉**。
-  用**同名 path**，或者取个排在其后的名字（`zz_my_overrides.json`）
-- **`settings` 是整块覆盖、不是逐字段合并**，这条坑对 `spoilage_env` 尤其致命；
+- **规则写进 `data/shelflife/`，文件名排在 `vanilla_foods.json` / `environment.json` 之后**
+  （比如 `zz_mypack.json`）—— 覆盖顺序就是**单纯按文件名排**，最省心
+- 用了**别的**命名空间也行，但排序会变成「先比 path、再比 namespace」：
+  你的 `data/mypack/food_spoilage/vanilla_foods.json` 和内置的 path 打平 →
+  比 namespace → `mypack` 排在前 → **你整份被内置盖掉**
+- **`settings` 是整块覆盖、不是逐字段合并**：只写一项的话，其余字段回到**内置默认值**
+  （而不是内置数据包那份 `environment.json` 的值），看着就是"改了没生效"；
   `containers` 是按 key 合并的，随便什么文件名都行
 - 条件用 `neoforge:conditions`（模组已自己包好，直接写）
 
@@ -198,7 +215,9 @@ my_pack/
 
 - **冷箱还没有合成配方**（`data/shelflife/recipe/` 是空的），目前只能从创造模式标签页获取。
   掉落表是有的（打掉会掉自己）
-- 通电冰箱（`IEnergyStorage` + 断电结算）还没做，但 `ContainerClimate` 接口已经就位 ——
-  见 [docs/datapack.md §6.3](docs/datapack.md)
+- **通电冰箱**：接口（`ContainerClimate` + `ShelfLifeApi.settleContainer`）已经齐了，
+  缺的是一个**示例方块** —— 本模组不带耗电冰箱。要自己做的话照着
+  [docs/datapack.md §6.3](docs/datapack.md) 抄即可。（注意：**冷箱是静态冰箱，
+  和这件事无关**，它只需要那一行数据包）
 - 管道往容器里**塞**物品时没有走加权平均（抽取侧已经覆盖）。
   症状是"管道能洗掉腐坏值"：不停往一堆快烂的里面塞新鲜的，那堆永远不变烂

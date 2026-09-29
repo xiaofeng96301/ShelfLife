@@ -83,12 +83,16 @@ ShelfLife 的**全部数值**都在数据包里。这份文档的目标是：**�
 我的数据包/
 ├── pack.mcmeta
 └── data/
-    └── mymod/                       ← 用你自己的命名空间（一般 = 你的 modid）
+    └── shelflife/                   ← 推荐就用这个命名空间，理由见 §2.6
         ├── food_spoilage/
         │   └── my_foods.json
         └── spoilage_env/
             └── my_env.json
 ```
+
+> **"文件放哪"和"规则管哪些物品"是两回事。** 文件放在 `shelflife` 命名空间下，
+> 里面的物品 id 照样写你自己的（`"mymod:cheese"`）。
+> 推荐写进 `shelflife` 只是为了**让覆盖顺序变成"单纯按文件名排"** —— 见 §2.6。
 
 `pack.mcmeta`（1.21.1 的 `pack_format` 是 **48**）：
 
@@ -101,7 +105,7 @@ ShelfLife 的**全部数值**都在数据包里。这份文档的目标是：**�
 }
 ```
 
-`data/mymod/food_spoilage/my_foods.json` —— 让你的两个物品会腐烂：
+`data/shelflife/food_spoilage/my_foods.json` —— 让你的两个物品会腐烂：
 
 ```json
 {
@@ -112,7 +116,7 @@ ShelfLife 的**全部数值**都在数据包里。这份文档的目标是：**�
 }
 ```
 
-`data/mymod/spoilage_env/my_env.json` —— 让你自己的容器变冷（可选）：
+`data/shelflife/spoilage_env/my_env.json` —— 让你自己的容器变冷（可选）：
 
 ```json
 {
@@ -137,6 +141,7 @@ ShelfLife 的**全部数值**都在数据包里。这份文档的目标是：**�
 > - 整合包/给玩家用 → 存档的 `datapacks/` 目录，或者做成一个 mod 的
 >   `src/main/resources/data/<ns>/...`（内置数据包就是这么放）
 > - 内置包改了要**重启**才生效；外部数据包可以 `/reload`
+> - **推荐把规则写进 `data/shelflife/`**（和内置同一个命名空间）—— 原因见 §2.6
 
 ---
 
@@ -280,32 +285,55 @@ tooltip 还是会走到"已腐烂"。
   谁赢取决于资源包顺序。想稳一点就给物品做自己的模型路径，别去动原版那个
 - `overlay` 和 `result` **不冲突**：霉长满之后照常换成 `result` 指定的物品
 
-### 2.6 多文件、覆盖顺序、冲突
+### 2.6 文件放哪个命名空间、覆盖顺序、冲突
 
-同一目录下可以有任意多个文件。规则：
+**推荐把规则写在 `data/shelflife/food_spoilage/` 下** —— 也就是和内置数据包**同一个命名空间**。
+（记住"文件放哪"和"规则管哪些物品"是两回事：文件放在 `shelflife` 下，
+里面的物品 id 照样写你自己的 `"mymod:cheese"`。）
 
-> **按文件 id 排序依次生效，排序靠后的赢。**
+理由只有一条：**同一个命名空间里，覆盖顺序就是单纯按文件名排。**
+一旦用了别的命名空间，就会多出一条反直觉的规则，而它几乎每个人都会踩一次。
+
+#### 规则本体
+
+> 同一目录下可以有任意多个文件，**按文件 id 排序依次生效，排序靠后的赢**。
 > 而 `ResourceLocation` 的比较是 **先比 path、再比 namespace**。
 
-第二句是关键，也是**最容易踩的坑**。举个例子：内置规则在
-`data/shelflife/food_spoilage/vanilla_foods.json`，你写了一份
-`data/mypack/food_spoilage/vanilla_foods.json` 想改原版苹果的数值 ——
-两者 **path 完全相同**（`food_spoilage/vanilla_foods.json`），于是比 namespace：
-`mypack` < `shelflife`，所以**排在后的是内置那份，你的被盖掉**。
+所以只要都在 `data/shelflife/food_spoilage/` 下，**排序就等于按文件名排**：
 
-**想稳定覆盖，用这两招之一**：
+| 你的文件名 | 与内置 `vanilla_foods.json` 比 | 结果 |
+|---|---|---|
+| `zz_mypack.json` | `v` < `z`，排在后面 | **你的赢** ✅ |
+| `aaa.json` | `a` < `v`，排在前面 | 内置的赢 ❌ 换个排在后面的名字 |
 
-1. **用同名 path** —— 此时数据包会赢过模组内置的 jar（同名时数据包优先）
-2. **取一个排在 `vanilla_foods.json` 后面的文件名** —— 比如 `zz_my_overrides.json`，
-   因为 `v` < `z`，你的文件排在后面、最终生效。**这是最省心的做法**
+**改一个物品的数值不需要动内置那个文件** —— 食物规则是按**物品**合并的
+（后看到的 `put` 覆盖先看到的），你只声明要改的那几个，其余照用内置。
 
-食物规则的合并是**按物品**的（`put` 覆盖），所以你的文件只覆盖你声明的那几个物品，
-内置对其余物品的规则照常生效。同一个物品被两处声明**且数值不同**时，日志会有一条 warn
-告诉你谁覆盖了谁：
+#### ⚠️ 如果你要写自己的命名空间
+
+它**仍然完全支持**，只是会撞上这条：排序 **先比 path、再比 namespace**。举例 ——
+内置在 `data/shelflife/food_spoilage/vanilla_foods.json`，你写
+`data/mypack/food_spoilage/vanilla_foods.json`：两者 **path 完全相同**
+（`food_spoilage/vanilla_foods.json`），于是只能比 namespace，而 `mypack` 排在
+`shelflife` **前面** → **你整份会被内置的盖掉**。
+
+写自己的命名空间时，取一个**排在 `vanilla_foods.json` 之后**的文件名
+（`zz_mypack.json`）就没事。省下的是命名空间上的自由度，代价是这条规则得一直记着。
+
+#### 出问题时看日志
+
+同一个物品被两处声明**且数值不同**时，会有一条 warn 告诉你**谁赢了**：
 
 ```
-[ShelfLife] 物品 minecraft:apple 的保质期参数被 shelflife:food_spoilage/vanilla_foods.json 覆盖（... -> ...）
+[ShelfLife] 物品 minecraft:apple 的保质期参数被 shelflife:food_spoilage/zz_mypack.json 覆盖（... -> ...）
 ```
+
+#### 「同名 path」是另一回事（大锤）
+
+真要**整份替换**内置规则（而不是逐条覆盖）时，才用得上"同名 path"：
+写 `data/shelflife/food_spoilage/vanilla_foods.json` 会把整个内置文件顶掉 ——
+同一个 id 只会有一份资源，**原版资源管理器已经替我们判好了优先级**（数据包 > 模组 jar），
+我们根本看不到两个同名文件。日常改数值别用它，那等于要把内置那份整个重写一遍。
 
 ### 2.7 条件：只在某个模组存在时才加载
 
@@ -439,13 +467,26 @@ tooltip 还是会走到"已腐烂"。
 > 这个偏移加在**反查之后** —— 所以同一份数据包在装 / 不装 createishot 时给出同样的冷却效果，
 > 不需要写两份。（曲线是分段线性的，若把偏移加在摄氏那一层，同一个数字会差一个数量级。）
 
-### 3.5 冷源三种做法 —— 什么时候用哪个
+### 3.5 容器三种做法 —— 什么时候用哪个
+
+两个方向都是同一个字段，只是正负号不同：
+
+| 我想要 | 写法 |
+|---|---|
+| **保鲜**（更慢、冷藏、冷冻） | 负的 `temperature`，或 `rate_override: 0.05` / `0`（停腐） |
+| **反鲜**（更快、腐烂箱） | 正的 `temperature`，或一个大的正 `rate_override` |
+
+具体用哪种：
 
 | 做法 | 写法 | 什么时候用 |
 |---|---|---|
-| **温度偏移**（推荐） | `{"temperature": -4.0}` | 默认就该用这个。它**是环境的一部分**，和"外面有多热"叠加：沙漠里的冷箱比雪原里的冷箱效果好。会被自动化喂食也没问题 |
-| **钉死倍率** | `{"rate_override": 0.05}` | 想要"不管在哪个群系、效果完全一样"，或者想要一个精确的倍率（比如 ×0.1 = 10 倍保质期）。`0` = **完全不腐烂** |
-| **方块实体自己报** | Java 实现 `ContainerClimate` | 只有**动态**冷源需要：通电才冷、燃料烧完就停。见 §6.3 |
+| **温度偏移**（推荐） | `{"temperature": -4.0}` / `{"temperature": 2.4}` | 默认就该用这个。它**是环境的一部分**，和"外面有多热"叠加：沙漠里的冷箱比雪原里的冷箱效果弱。会被自动化喂食也没问题 |
+| **钉死倍率** | `{"rate_override": 0.05}` | 想要"不管在哪个群系、效果完全一样"，或者想要一个精确的倍率（比如 ×0.1 = 10 倍保质期）。`0` = **完全不腐烂**（真正的停腐，不是"很慢"） |
+| **方块实体自己报** | Java 实现 `ContainerClimate` + `ShelfLifeApi.settleContainer` | 只有**动态**容器需要：通电才冷、燃料烧完就停。见 §6.3 |
+
+> **固定温度的容器只需要一行数据包，不需要写任何 Java。** 本模组自己的冷箱就是这么做的
+> （`"shelflife:cold_box": { "temperature": -4.0 }`）。
+> `ContainerClimate` 那个接口是给"状态会自己变"的容器准备的，别把简单的事情做复杂。
 
 **`rate_override` 的取值规则**（源码级）：
 
@@ -513,22 +554,27 @@ createishot 提供的是真正的热力学温度场（体素网格 + 传导 + �
 `auto` 在服务端解析数据包时就落到了具体来源上，客户端拿到的永远是解析过的值。
 （否则没装 createishot 的客户端会按自己的模组列表各解析一遍，两边算出不同的倍率。）
 
-### 3.8 ⚠️ `settings` 的覆盖顺序陷阱
+### 3.8 ⚠️ `settings` 的覆盖顺序
 
-这条和 §2.6 是同一个机制，但后果更严重：
+**推荐把文件写在 `data/shelflife/spoilage_env/` 下、取一个排在 `environment.json` 之后的名字**
+（比如 `zz_mypack.json`）。这样它排在最后，`settings` 就是你的。
 
-> **`settings` 是整块覆盖，不是逐字段合并。**
-> 而且排序比的是 **path 在前、namespace 在后**。
+> **`settings` 是整块覆盖，不是逐字段合并。** 而且排序比的是
+> **path 在前、namespace 在后**（和 §2.6 同一个机制）。
 
-所以第三方数据包写 `data/mypack/spoilage_env/environment.json` 时，path 和内置的
-`data/shelflife/spoilage_env/environment.json` **打平**，接着比 namespace：
-`mypack` 排在 `shelflife` 前面 → **你整块 settings 会被内置的盖掉**，而且只改了一两个字段的
-"部分覆盖"是做不到的。
+意味着两件事：
 
-想让自己的生效，二选一：
+- **想改 `settings` 就得写全。** 只写 `reference_temperature` 一项的话，其余字段会用**内置默认值**，
+  而不是内置数据包那份 `environment.json` 里的值 —— 看起来"改了但没生效"，其实是整块被换掉了
+- **写自己的命名空间要小心平局。** `data/mypack/spoilage_env/environment.json` 的 path 和内置的
+  完全相同，于是比 namespace，而 `mypack` 排在 `shelflife` **前面** → **你整块 settings 被内置盖掉**。
+  换成 `zz_mypack.json` 就没事
 
-1. **用同名 path** —— 同名时数据包赢过模组内置的 jar
-2. **取一个排在 `environment.json` 之后的名字** —— 比如 `zz_mypack.json`（推荐，最省心）
+> **`settings` 不需要用"同名 path"那招。** 它是整块覆盖，一个排在后面的普通文件就能全盘接管；
+> 同名 path 是留给"整份替换 `food_spoilage` 规则"的（见 §2.6 末尾）。
+
+最省心的写法其实是：**在同一个文件里写 `settings` 的同时也写 `containers`** ——
+反正整块都要写全，不如一次写完。
 
 `containers` **不是**整块覆盖，而是按键合并（`putAll`）——
 
@@ -693,28 +739,172 @@ if (!taken.isEmpty()) {
   所以烂透时你要自己用 `replacementIfSpoiled` 的返回值
 - **`ItemStack` 是不可变的"值"**，改组件请改你手上那个实例，别改完就丢了
 
-### 6.3 `ContainerClimate` —— 让容器自己报"此刻多冷"
+### 6.3 动态容器：`ContainerClimate` + `settleContainer`
 
-数据包里的 `spoilage_env` 只能表达**静态**冷源（"这个方块是冰箱"）。
-表达不了"通电时才冷"。让方块实体实现这个接口就行：
+**先确认你需要这个。** 固定温度的容器（"我这个方块就是个冰箱"）**不需要写任何 Java** ——
+数据包里 [§3.4](#34-containers-字段表) 的 `containers` 一行就够了，本模组的冷箱就是这么实现的。
+**只有状态会自己变的容器**才需要这一节：通电才冷、燃料烧完就停、开盖时保温失效。
+
+#### ① 先解决一个前置问题：`climate()` 读什么
+
+这决定了你**能不能**把顺序写对。
+
+**`climate()` 要读你自己记的字段，不要直接读方块状态。** 因为"先结清、再改状态"这个唯一
+正确的顺序，前提是"结清的那一刻采样到的还是旧环境"。如果 `climate()` 是从方块状态算出来的，
+而方块状态已经被改掉了，你就**根本没有"改之前"这个时机**可用：
 
 ```java
-public class MyFridgeBlockEntity extends BlockEntity implements ContainerClimate {
+// ✅ 读自己的字段：什么时候改由你定，"改之前"这个时机是存在的
+@Override
+public @Nullable ContainerModifier climate() {
+    return powered ? COLD : null;
+}
 
-    private boolean powered;
-
-    @Override
-    public @Nullable ContainerModifier climate() {
-        // 返回 null = "此刻我没有修正"，回落到数据包（再没有就回落到群系）
-        return powered ? new ContainerModifier(-4.0F, 0.0F, Optional.empty()) : null;
-    }
+// ❌ 读实时方块状态：红石一变它就变了，你已经错过结清时机
+@Override
+public @Nullable ContainerModifier climate() {
+    return getBlockState().getValue(PropagatedPowerBlock.POWERED) ? COLD : null;
 }
 ```
 
-- 本模组**每次环境采样**都会问一次（背包侧每秒~十秒一次、开箱时一次），
-  所以 `climate()` **必须便宜** —— 读几个字段可以，别在里面做遍历或查询
-- 实体的返回值**覆盖**数据包给这个方块写的修正
-- 只对**方块实体承载的容器**生效；拿不到实体的容器问不到
+真要读方块状态也行，那就得把时机抢回来：**在你自己调 `setBlockState` 之前**先结清。
+
+还要注意返回值的语义差别：
+
+| 返回 | 含义 |
+|---|---|
+| `null` | "此刻我没有修正" → **回落到数据包**（数据包也没有就回落到群系） |
+| `new ContainerModifier(0, 0, empty)` | "我此刻的修正是 0" → **连数据包给这个方块的修正一起压掉** |
+
+所以"断电 = 变成普通箱子"应该返回 `null`，而不是零修正 —— 除非你就是要无视数据包那条。
+
+#### ② 完整例子：一台通电才冷的冰箱
+
+```java
+public class PoweredFridgeBlockEntity extends BaseContainerBlockEntity implements ContainerClimate {
+
+    private static final int SLOTS = 27;
+
+    /** 通电时的修正。定义成常量：这个对象每次采样都会被取用，没必要反复 new */
+    private static final ContainerModifier COLD = new ContainerModifier(-4.0F, 0.0F, Optional.empty());
+
+    /** 当前状态记在你自己身上，不从方块状态倒推 —— 见 ① */
+    private boolean powered;
+
+    private NonNullList<ItemStack> items = NonNullList.withSize(SLOTS, ItemStack.EMPTY);
+
+    public PoweredFridgeBlockEntity(BlockPos pos, BlockState state) {
+        super(MyMod.POWERED_FRIDGE_BE.get(), pos, state);
+    }
+
+    // ---------------------------------------------------------- 报"此刻多冷"
+
+    @Override
+    public @Nullable ContainerModifier climate() {
+        // 纯查询：只读一个字段。全模组每次环境采样都会走到这里，别放任何查询或遍历
+        return powered ? COLD : null;      // 断电返回 null = 回落到数据包 / 群系
+    }
+
+    // ---------------------------------------------------------- 状态变化
+
+    /**
+     * 供电方（发电机、能量线、红石逻辑）从这里通知。
+     *
+     * <p><b>通电和断电走的是同一个方法</b> —— 别把某一个方向写在别处，那样很容易只结清一半。
+     */
+    public void setPowered(boolean powered) {
+        if (powered == this.powered) return;      // 状态没变：不用结清，也不用改
+
+        // ⚠️ 全部正确性都在这一行的位置上：必须在 this.powered 被改掉**之前**调。
+        // 此刻 climate() 读到的还是旧状态，所以结清的是"旧倍率那一段时间"；
+        // 改完之后产生的才是新倍率的账。
+        ShelfLifeApi.settleContainer(this, level, worldPosition, getBlockState().getBlock());
+
+        this.powered = powered;
+        setChanged();
+
+        // 如果"通没通电"在画面上看得出来，常规做法还要同步给客户端。
+        // 注意这里要自己判 level 非空 —— settleContainer 不需要，它内部处理了
+        if (level != null && !level.isClientSide) {
+            level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), Block.UPDATE_ALL);
+        }
+    }
+
+    // ---------------------------------------------------------- 标准容器样板
+
+    @Override public int getContainerSize() { return SLOTS; }
+    @Override protected NonNullList<ItemStack> getItems() { return items; }
+    @Override protected void setItems(NonNullList<ItemStack> items) { this.items = items; }
+    @Override protected Component getDefaultName() { return Component.translatable("container.mymod.powered_fridge"); }
+    @Override protected AbstractContainerMenu createMenu(int id, Inventory inv) { return ChestMenu.threeRows(id, inv, this); }
+    // saveAdditional / loadAdditional 里记得把 powered 一起存了，否则重启后状态就丢了
+}
+```
+
+`ShelfLifeApi.settleContainer` 内部会处理"是不是客户端""level 是不是 null""本模组有没有规则"
+这几件事，调用方直接调就行，不用在它外面套一堆判断。
+
+#### ③ 四条规矩
+
+| 规矩 | 为什么 |
+|---|---|
+| `climate()` **只读自己的字段** | 否则你没有"改状态之前"这个时机（见 ①） |
+| **先结清，再改状态** | 结清用的是"此刻"的环境。反过来就是拿**新**倍率去算**旧**间隔 |
+| **两个方向都要** | 通电、断电是两个独立事件。漏一个，那段间隔就记到另一边的倍率上了 |
+| **只在状态真的变了时调** | 别在 `tick()` 里无条件调。结清本身是幂等的（只消费整点，多调也不会算错），但白花钱 |
+
+顺序写反、或者漏调一边，**都不会报任何错**，只会在几小时后表现为"这堆食物怎么烂得不对"。
+
+#### ④ 怎么验证你没写错
+
+1. 往冰箱里放一条鱼，手上拿着它 `/shelflife spoilage get`，记下时间戳
+2. 通电，等半分钟让它按冷倍率攒一点
+3. **断电**（这一步应该结清一次）
+4. 再 `/shelflife spoilage get` —— **时间戳应该正好落在"断电那一刻"**，
+   而 `cur` 只涨了冷倍率那一份
+5. 对照：如果第 3 步漏了，等下次开箱时 `cur` 会按**常温**把这几分钟一次性补上
+
+> `get` 读的是**组件里存着的锚点**（真值），tooltip 上是**按时间实时推算**的显示值 ——
+> 两者不是一回事，验证要看 `get`。按 **F3+H** 打开高级提示框，倍率那一行会直接
+> 告诉你此刻是 ×0.05 还是常温。
+
+#### ⑤ 数据包那边要不要写？
+
+- **断电 = 普通箱子**（不做任何修正）→ **什么都不用写**，`climate()` 返回 `null` 自然落回群系
+- **断电后还想有一点保温**（"箱体本身隔热"）→ 数据包里给这个方块写一条
+  `{"temperature": -0.5}` 兜底，通电时 `climate()` 的返回值会盖掉它 ——
+  这就是 ① 里"返回 `null` vs 返回零修正"的用法差别
+
+#### ⑥ 不调会怎样
+
+本模组的腐烂是**检查点模型**：物品身上只有一个"上次结算时刻 + 当时的值"，
+**表示不了"这段间隔里先后有两个倍率"**。于是有一条硬规则：
+
+> **任何会改变倍率的事件，都必须在那一刻结算一次。**
+
+实现 `ContainerClimate` **不会**自动获得这条保证，所以漏调的后果是：
+
+| 情况 | 后果 |
+|---|---|
+| 容器**正被玩家开着** | 模组自己会在 1 秒内发现倍率变化并补一次结算（用旧倍率），漏调也不会错 |
+| 容器**没被任何玩家开着** | **没有任何东西会观察到这次变化**。要等到下次有人开箱或往外抽东西，才会拿那时候（新）的倍率把整段间隔算一遍 |
+
+模组**不会**主动扫描世界上的容器来发现这种变化 —— 那正是本模组刻意避开的开销。
+所以"我变了"只能由容器自己说。这也是为什么这个接口必须存在。
+
+**顺序写反的代价不是理论，是实测的数字。** 同样一段"20 分钟前开始计时、还没腐坏"的鱼，
+只改"按谁的环境结清"这一个参数（内置鳕鱼 `tps=120`）：
+
+| 结清用的环境 | 算式 | 结果 |
+|---|---|---|
+| 冷箱（×0.05） | `24000 × 0.05 ÷ 120` | `cur = 10`，还剩 3 小时 |
+| 常温（×0.95） | `24000 × 0.95 ÷ 120 = 190` → 截到 100 | **直接烂透，变成腐烂肉类** |
+
+结清本身是**把检查点重新锚定**：当前值一点不变，时间戳往后推到"账已结清的那一刻"，
+所以之后产生的才是新倍率的账。实测里 `live` 结清前后都是 `10.000`、时间戳恰好前移 24000 刻。
+
+> 同理，**搬运物品**的模组要在抽取时调 `ShelfLifeApi.settleStack`（§6.2），
+> 那个是"物品离开容器"的对应动作。
 
 ---
 
@@ -773,6 +963,7 @@ public class MyFridgeBlockEntity extends BlockEntity implements ContainerClimate
 | **冷箱不够冷 / 冷箱不冷** | 倍率撞到了 `min_multiplier`（默认 0.05）—— 想要更冷请把这个值调低 |
 | **腐烂箱不够快** | 撞到了 `max_multiplier`（默认 4.0）→ 改用 `rate_override`（它不受上下限约束） |
 | **新加的容器修正完全没效果** | 键写的是方块 id，要确认那个方块**真的实现了 `Container`**（冷源只在容器被采样时施加） |
+| **动态冰箱（通电才冷）断电后账算错** | 改状态**之前**没调 `ShelfLifeApi.settleContainer`，或者只调了一个方向。见 §6.3 |
 | **堆叠之后保质期变了** | 饥荒式加权平均：`(旧值×旧数量 + 新值×新数量) ÷ 总数`。这是设计 |
 
 ---
@@ -791,11 +982,16 @@ public class MyFridgeBlockEntity extends BlockEntity implements ContainerClimate
    单位是原版温度刻度，装不装 createishot 都一样
 6. 想让容器**更快**腐烂 → 正的 `temperature`，或 `rate_override: 20.0`。
    **负数会被忽略**
-7. 文件名要**排在 `vanilla_foods.json` / `environment.json` 之后**（比如 `zz_mypack.json`），
-   否则会被内置数据包按"path 在前、namespace 在后"盖掉
+7. 规则写进 `data/shelflife/{food_spoilage,spoilage_env}/`（**和内置同一个命名空间**），
+   文件名取排在 `vanilla_foods.json` / `environment.json` 之后的（比如 `zz_mypack.json`）——
+   这样覆盖顺序就是**单纯按文件名排**，没有 namespace 平局那套反直觉规则。
+   写自己的命名空间也行，但 path 和内置相同时会按 namespace 分胜负（`mypack` 排在
+   `shelflife` 前面 → 你会被盖掉）
 8. 加载后看日志确认 `[ShelfLife] 保质期配置生效，覆盖 N 个物品`，N 要对
 9. 别指望它给"没被玩家碰过"的食物计时 —— 这是设计（事件驱动）
 10. 不想让 createishot 的热源影响腐烂 → `"temperature_source": "biome"`；
     它的温度换算对不上 → 校准 `celsius_curve`（`/createishot thermal at`）
 11. 要精确控制腐坏程度来测试 → `/shelflife spoilage rot 84`（手上拿着物品）
 12. 写了规则的物品**不要**再自己实现一套腐烂逻辑，会打架
+13. 动态容器（通电才冷那种）：`climate()` 只读自己的字段，**状态真的变了时先调
+    `ShelfLifeApi.settleContainer` 再改状态**，通电/断电两个方向都要 —— 完整示范见 §6.3

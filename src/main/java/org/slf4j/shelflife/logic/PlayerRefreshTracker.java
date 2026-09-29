@@ -98,7 +98,13 @@ public final class PlayerRefreshTracker {
                 containerSample = EnvironmentSampler.sampleAt(at.level(), at.pos(),
                         at.level().getBlockState(at.pos()).getBlock());
 
-                // 开着的容器倍率也会自己变（营火熄灭、入夜、下雨），所以同样要复查并补发
+                // 开着的容器倍率也会自己变（营火熄灭、入夜、下雨），所以同样要复查并补发。
+                //
+                // 这里那次"用旧倍率结清"通常是空操作：动态容器按契约会在改自己状态**之前**
+                // 调一次 ShelfLifeApi.settleContainer，而 SpoilageSettlement.advance 只消费整点、
+                // 时间戳也只前进已消费的那一段 —— 所以这一趟算出来的 elapsed 不够一个点，直接返回 null。
+                // 留着它是因为它覆盖的情况不同：容器**不是方块实体承载**时（双联箱、末影箱）
+                // 只有这里能结清，而且**给客户端补发倍率只能由这里做**。
                 if (previous != null && previous.containerId() == containerId && previous.container() != null
                         && rateChanged(previous.container(), containerSample)) {
                     InventorySpoilage.settleMenu(menu, player.getInventory(), previous.container().rate(), now);

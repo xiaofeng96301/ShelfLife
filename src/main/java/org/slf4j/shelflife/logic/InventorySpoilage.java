@@ -3,6 +3,7 @@ package org.slf4j.shelflife.logic;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.NonNullList;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.Container;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
@@ -92,6 +93,38 @@ public final class InventorySpoilage {
                 slot.setChanged();
             }
         }
+    }
+
+    /**
+     * 结算<b>任意 {@link Container}</b> 的全部格子 —— 不经过菜单，直接对着容器写。
+     *
+     * <p>给"容器的环境要变了，先按<b>旧</b>环境结清"用（见 {@code ShelfLifeApi#settleContainer}）。
+     * 和 {@link #settleMenu} 的区别只是操作对象：那边是菜单槽位（要跳过玩家背包、要 {@code slot.set}），
+     * 这边是容器本身。
+     *
+     * @return 被改写的格子数，调用方可据此决定要不要额外标记
+     */
+    public static int settleContainer(Container container, float rate, long now) {
+        int changed = 0;
+        for (int i = 0; i < container.getContainerSize(); i++) {
+            ItemStack stack = container.getItem(i);
+            if (stack.isEmpty()) continue;
+            SpoilageConfig config = SpoilageManager.get(stack.getItem());
+            if (config == null) continue;
+
+            boolean changedHere = SpoilageSettlement.settle(stack, config, rate, now);
+            ItemStack replacement = SpoilageTransformation.replacementFor(stack, config);
+            if (replacement != null) {
+                // 刚好在这一轮烂透：整堆换掉，和别处一样 —— ItemStack 改不了"它是什么物品"
+                container.setItem(i, replacement);
+                changedHere = true;
+            }
+            if (changedHere) {
+                container.setChanged();
+                changed++;
+            }
+        }
+        return changed;
     }
 
     // ------------------------------------------------------------------ 被动刷新（只判断，不重复写）

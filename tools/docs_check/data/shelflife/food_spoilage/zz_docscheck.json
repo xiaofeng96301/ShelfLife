@@ -1,0 +1,5 @@
+{
+  "items": {
+    "minecraft:apple": { "max_spoilage": 100, "ticks_per_spoilage": 9999 }
+  }
+}

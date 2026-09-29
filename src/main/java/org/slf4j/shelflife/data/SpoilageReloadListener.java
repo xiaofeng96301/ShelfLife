@@ -48,6 +48,24 @@ public class SpoilageReloadListener extends SimpleJsonResourceReloadListener {
         this.ops = new ConditionalOps<>(RegistryOps.create(JsonOps.INSTANCE, registryAccess), conditionContext);
     }
 
+    /**
+     * 列举文件（真正干活的解析在 {@link #apply}）。这里插一条耗时日志。
+     *
+     * <p>列举的是**所有命名空间**下的 {@code food_spoilage/} —— 这是必须的：
+     * 第三方数据包用的是它们**自己的**命名空间（`data/mymod/food_spoilage/...`），
+     * 只认 {@code shelflife} 会让所有外部规则静默消失。代价就是这条日志要说明的事：
+     * 它随「数据包数量 × 命名空间数量」增长，而且**只在数据包 reload 时发生一次**
+     * （登录 / `/reload`），不在 tick 上。
+     */
+    @Override
+    protected Map<ResourceLocation, JsonElement> prepare(ResourceManager resourceManager, ProfilerFiller profiler) {
+        long started = System.nanoTime();
+        Map<ResourceLocation, JsonElement> files = super.prepare(resourceManager, profiler);
+        LOGGER.info("[ShelfLife] 列举 {}：{} 个文件 / {} 个数据包，耗时 {} ms", DIRECTORY, files.size(),
+                resourceManager.listPacks().count(), (System.nanoTime() - started) / 1_000_000L);
+        return files;
+    }
+
     @Override
     protected void apply(Map<ResourceLocation, JsonElement> files, ResourceManager resourceManager, ProfilerFiller profiler) {
         Map<ResourceLocation, SpoilageRule> parsed = new HashMap<>();

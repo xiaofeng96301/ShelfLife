@@ -55,6 +55,16 @@ public class EnvironmentReloadListener extends SimpleJsonResourceReloadListener 
         this.ops = new ConditionalOps<>(RegistryOps.create(JsonOps.INSTANCE, registryAccess), conditionContext);
     }
 
+    /** 同 {@code SpoilageReloadListener#prepare} —— 列举所有命名空间，代价与理由都写在那里。 */
+    @Override
+    protected Map<ResourceLocation, JsonElement> prepare(ResourceManager resourceManager, ProfilerFiller profiler) {
+        long started = System.nanoTime();
+        Map<ResourceLocation, JsonElement> files = super.prepare(resourceManager, profiler);
+        LOGGER.info("[ShelfLife] 列举 {}：{} 个文件 / {} 个数据包，耗时 {} ms", DIRECTORY, files.size(),
+                resourceManager.listPacks().count(), (System.nanoTime() - started) / 1_000_000L);
+        return files;
+    }
+
     @Override
     protected void apply(Map<ResourceLocation, JsonElement> files, ResourceManager resourceManager, ProfilerFiller profiler) {
         List<ResourceLocation> ids = new ArrayList<>(files.keySet());
