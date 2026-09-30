@@ -166,28 +166,19 @@ dependencies {
     // 放在 run/mods 的话 run/ 被 gitignore，换台机器就编译不过。
     // 不用 exists() 包起来是故意的：jar 缺了就该编译失败，而不是留下一个难查的 NoClassDefFoundError。
     // 走和 Curios 一样的路子：compileOnly 供编译，runtimeOnly 只进开发运行期，都不会打进发布包。
-    compileOnly files('libs/createishot-1.0-SNAPSHOT.jar')
-    runtimeOnly files('libs/createishot-1.0-SNAPSHOT.jar')
 
-    // 另外两个可选依赖：走和 createishot 一样的路子 —— compileOnly 供编译，runtimeOnly 只进开发运行期。
-    // 两个都不会被打进发布包（不是 jarJar，只是开发环境的 classpath）。
-    // 需要 runtimeOnly 的理由：管道兼容的钩子只有把 mod 真加载起来才验证得了，
-    // 之前只用 compileOnly 的后果是"游戏里根本没有 Mekanism / Pipez"，压根没法测。
-    compileOnly files('libs/mekanism-1.21.1-10.7.19.85.jar')
-    runtimeOnly files('libs/mekanism-1.21.1-10.7.19.85.jar')
-    compileOnly files('libs/pipez-neoforge-1.21.1-1.2.31.jar')
-    runtimeOnly files('libs/pipez-neoforge-1.21.1-1.2.31.jar')
+
     // Create 不在这里：它由上面的 implementation("com.simibubi.create:create-...") 提供编译 + 运行期，
     // 原来那份 libs/create-*.jar 已经删掉了（留着只会是个指向不存在文件的死引用）。
 
-    def runModsDir = file('run/mods')
+    def runModsDir = file('libs')
     if (runModsDir.exists() && runModsDir.listFiles()) {
         def modFiles = fileTree(dir: runModsDir, include: '*.jar').matching {
             exclude "${project.mod_id}*.jar",
                     "jei-1.21.1-neoforge-19.39.0.368.jar"
         }
         if (!modFiles.isEmpty()) {
-            compileOnly modFiles
+            implementation modFiles
         }
     }
 }

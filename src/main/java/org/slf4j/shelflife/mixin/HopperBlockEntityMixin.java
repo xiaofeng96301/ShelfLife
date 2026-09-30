@@ -28,6 +28,25 @@ import org.slf4j.shelflife.logic.SpoilageMerge;
  *
  * <p>{@code @Share} 的作用域是一次方法调用，不会串到别的漏斗上去。
  *
+ * <p><b>漏斗有两条路，走哪条取决于目标有没有物品能力</b>（1.21.1 + NeoForge 21.1.252 实测）：
+ *
+ * <ul>
+ *   <li><b>目标不带能力</b> —— 本模组的冷箱就是这种（{@code BaseContainerBlockEntity} 不是
+ *       {@code WorldlyContainer}，NeoForge 不给它注册物品能力）→ 走原版
+ *       {@code ejectItems → addItem → tryMoveInItem}，<b>就是这里覆盖的那条</b></li>
+ *   <li><b>目标带能力</b>（箱子、木桶、模组机器）→ {@code ejectItems} 第一行就被
+ *       {@code VanillaInventoryCodeHooks.insertHook} <b>整段接管</b>，上面那条路一次都不执行
+ *       → 由 {@link VanillaInventoryCodeHooksMixin} + {@code InvWrapper}/{@code SidedInvWrapper}
+ *       的塞入钩子覆盖</li>
+ * </ul>
+ *
+ * <p><b>抽出侧</b>两条路都收敛在 {@code Container#removeItem} 上（原版走
+ * {@code tryTakeInItemFromSlot}，能力那条走包装内部的 {@code inv.removeItem}），
+ * 所以由 {@code BaseContainerBlockEntityMixin} 一条覆盖。
+ *
+ * <p><b>删这条之前先跑自测</b>：冷箱那条链（{@code [ok] 漏斗合并：…}）在没有它的时候会直接失败 ——
+ * 因为冷箱没有物品能力，走的就是这条路。
+ *
  * <p>本处不写 {@code ordinal}：{@code grow} 有两个调用点（shrink 内部也是发 {@code grow(负数)}），
  * 但两者可以靠符号区分 —— 负数那一支在 {@code averaged} 里直接早退。宁可这样，也不去赌字节码里
  * 谁先谁后（这正是本次踩的坑）。

@@ -6,13 +6,17 @@
   "mixins": [
     "AbstractContainerMenuMixin",
     "BaseContainerBlockEntityMixin",
+    "CompoundContainerAccessor",
+    "ContainersMixin",
     "HopperBlockEntityMixin",
     "InvWrapperMixin",
     "InventoryMixin",
     "ItemEntityMixin",
+    "ItemStackHandlerMixin",
     "SidedInvWrapperMixin",
     "SimpleContainerMixin",
-    "SlotMixin"
+    "SlotMixin",
+    "VanillaInventoryCodeHooksMixin"
   ],
   "client": [
   ],

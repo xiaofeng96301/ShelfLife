@@ -11,8 +11,18 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.slf4j.shelflife.logic.SpoilageMerge;
 
 /**
- * {@code SimpleContainer#addItem} 的合并路径 —— 桶、漏斗矿车等一批容器直接用它，
- * 不走菜单也不走 {@code Inventory}。
+ * {@code SimpleContainer} 自己的合并路径（{@code addItem} → {@code moveItemsToOccupiedSlotsWithSameType}）。
+ *
+ * <p>它和菜单、{@code Inventory}、漏斗**都不是同一条路**：{@code SimpleContainer} 是"容器"接口
+ * 最常用的通用实现，模组自制的机器/背包大量直接用它（原版也有几处），
+ * 它内部的合并判定和写入都得单独挂。
+ *
+ * <p>⚠️ <b>别拿"哪个方块"来推断谁走这条路。</b>箱子 / 木桶 / 漏斗 / 熔炉都是
+ * {@code BaseContainerBlockEntity} 那一支 —— 走菜单和漏斗的钩子；
+ * <b>漏斗矿车也不是</b>（它是 {@code AbstractMinecartContainer}，但因为实现了 {@code Hopper}，
+ * 复用的是 {@code HopperBlockEntity} 里那几个静态方法 —— {@code suckInItems} 里的
+ * {@code tryTakeInItemFromSlot} 和 {@code addItem}，所以由漏斗那条钩子覆盖）。
+ * 判断标准只有一个：<b>这个容器内部是不是用 {@code SimpleContainer} 装的</b>。
  */
 @Mixin(SimpleContainer.class)
 public abstract class SimpleContainerMixin {

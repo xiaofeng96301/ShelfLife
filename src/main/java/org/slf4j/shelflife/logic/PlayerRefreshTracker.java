@@ -103,8 +103,12 @@ public final class PlayerRefreshTracker {
                 // 这里那次"用旧倍率结清"通常是空操作：动态容器按契约会在改自己状态**之前**
                 // 调一次 ShelfLifeApi.settleContainer，而 SpoilageSettlement.advance 只消费整点、
                 // 时间戳也只前进已消费的那一段 —— 所以这一趟算出来的 elapsed 不够一个点，直接返回 null。
-                // 留着它是因为它覆盖的情况不同：容器**不是方块实体承载**时（双联箱、末影箱）
-                // 只有这里能结清，而且**给客户端补发倍率只能由这里做**。
+                // 留着它有两个理由：①倍率**自己**变的时候（营火熄灭、入夜、下雨）没有任何一方
+                // 会"改状态"，动态容器那条契约根本轮不到，只有这里能发现并结清；
+                // ②**给客户端补发倍率只能由这里做** —— 不补发，tooltip 上的数字就会和实际对不上。
+                //
+                // 不覆盖：locate() 查不到的容器（末影箱、没注册定位器的模组菜单）——
+                // 那种情况下连倍率都取不到，整条分支压根不执行。这是既有的限制。
                 if (previous != null && previous.containerId() == containerId && previous.container() != null
                         && rateChanged(previous.container(), containerSample)) {
                     InventorySpoilage.settleMenu(menu, player.getInventory(), previous.container().rate(), now);

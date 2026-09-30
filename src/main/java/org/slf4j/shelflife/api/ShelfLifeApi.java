@@ -134,6 +134,12 @@ public final class ShelfLifeApi {
      * 模组<b>不会</b>主动扫描世界上的容器来发现这种变化（那正是本模组刻意避开的开销），
      * 所以这个"我变了"必须由容器自己说。
      *
+     * <p><b>别把它用在带"输出槽"的机器上</b>（熔炉、加工机那种有"只出不进"格子的方块）。
+     * 这个方法是按 {@code Container} 的格子走的，拿不到 {@code Slot}、也就看不出哪个格子是输出槽；
+     * 而往输出槽写组件会让原版判定"和刚产出的不是同一个物品"，机器会卡死。
+     * 本模组自己结算菜单时是按 {@code Slot} 走的，所以那边有这道保护（见
+     * {@code InventorySpoilage} 的 {@code isOutputOnly}）。
+     *
      * @param container      要结算的容器（一般就是方块实体自己）
      * @param containerBlock 容器所在的方块，用于取环境修正；可传 {@code null}（只用群系环境）
      * @return 被改写的格子数

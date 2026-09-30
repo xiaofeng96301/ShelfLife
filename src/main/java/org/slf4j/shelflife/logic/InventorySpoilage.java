@@ -19,6 +19,7 @@ import org.slf4j.shelflife.api.MenuContainerProvider;
 import org.slf4j.shelflife.component.SpoilageData;
 import org.slf4j.shelflife.data.SpoilageConfig;
 import org.slf4j.shelflife.data.SpoilageManager;
+import org.slf4j.shelflife.mixin.CompoundContainerAccessor;
 
 import java.util.Optional;
 import java.util.Set;
@@ -86,6 +87,7 @@ public final class InventorySpoilage {
             if (slot.container == playerInventory) continue;
             ItemStack stack = slot.getItem();
             if (stack.isEmpty()) continue;
+            if (isOutputOnly(slot, stack)) continue;
             SpoilageConfig config = SpoilageManager.get(stack.getItem());
             if (config == null) continue;
 
@@ -138,6 +140,27 @@ public final class InventorySpoilage {
         return changed;
     }
 
+    /**
+     * 这个槽位是"只出不进"的输出槽吗 —— 是的话我们一律不碰。
+     *
+     * <p><b>为什么输出槽碰不得：</b>原版（以及很多模组）判断"还能不能再产出一个"用的是
+     * {@code ItemStack.isSameItemSameComponents(输出槽里的东西, 这次要产的产物)}。
+     * 产物是刚构造出来的、<b>没有保质期组件</b>的；而我们在输出槽上打一个组件，就让它俩
+     * "不是同一个物品"了 —— 后果是熔炉<b>彻底卡住</b>：烧出第一个之后 {@code canBurn} 永远是 false，
+     * 再也不会烧第二个。爆出来的现象是"一组鱼只有第一条能烧出来"。
+     *
+     * <p>合成台和各种机器的输出槽是同一个道理：它们的"能不能继续产出"也多半是这么比的。
+     *
+     * <p>判定用 {@link Slot#mayPlace}：只出不进的槽位放不进东西，所以返回 {@code false}。
+     * 不用 {@code instanceof ResultSlot} 之类的类型判断 —— 那样只覆盖原版，覆盖不到模组的机器。
+     *
+     * <p>代价：极少数"只接受特定物品"的槽位（燃料槽之类）里如果被塞进了别的东西，
+     * 那件东西不会被结算。少结算一次只是"那段时间按下次结算的环境记"，比卡住一个机器好得多。
+     */
+    private static boolean isOutputOnly(Slot slot, ItemStack stack) {
+        return !slot.mayPlace(stack);
+    }
+
     // ------------------------------------------------------------------ 被动刷新（只判断，不重复写）
 
     /** 刷新整个背包：补时钟起点 + 把到期的换成腐烂物。 */
@@ -162,6 +185,7 @@ public final class InventorySpoilage {
             if (slot.container == playerInventory) continue;
             ItemStack stack = slot.getItem();
             if (stack.isEmpty()) continue;
+            if (isOutputOnly(slot, stack)) continue;
             SpoilageConfig config = SpoilageManager.get(stack.getItem());
             if (config == null) continue;
             ItemStack replacement = refreshItem(stack, config, rate, now);
@@ -224,6 +248,9 @@ public final class InventorySpoilage {
      *   <li>再退回遍历槽位，找第一个由方块实体承载的（原版箱子/木桶/熔炉/漏斗都在这条路上）</li>
      * </ol>
      *
+     * <p><b>双联箱要在第 2 条里单独接一手</b>：它在菜单里是一个 {@code CompoundContainer}，
+     * 本身不是方块实体，直着判会整个漏掉（见 {@link #blockEntityBehind}）。
+     *
      * <p>第 2 条对 {@code SlotItemHandler} 那类机器容器**永远猜不中** ——
      * 它的槽位容器是一个共享的空 {@code SimpleContainer}。所以查不到时这里会**出声**：
      * 查不到的后果不是"显示不对"，而是开箱那次结算会按玩家脚下的倍率给容器里的食物记账，
@@ -241,11 +268,11 @@ public final class InventorySpoilage {
 
         // ② 猜：找第一个由方块实体承载的槽位
         for (Slot slot : menu.slots) {
-            if (slot.container instanceof BlockEntity blockEntity) {
-                Level beLevel = blockEntity.getLevel();
-                if (beLevel != null) {
-                    return Optional.of(new ContainerLocation(beLevel, blockEntity.getBlockPos()));
-                }
+            BlockEntity blockEntity = blockEntityBehind(slot.container);
+            if (blockEntity == null) continue;
+            Level beLevel = blockEntity.getLevel();
+            if (beLevel != null) {
+                return Optional.of(new ContainerLocation(beLevel, blockEntity.getBlockPos()));
             }
         }
 
@@ -256,5 +283,25 @@ public final class InventorySpoilage {
                     menu.getClass().getName());
         }
         return Optional.empty();
+    }
+
+    /**
+     * 这个槽位的容器背后是哪个方块实体 —— 不是方块实体就返回 {@code null}。
+     *
+     * <p>比直接 {@code instanceof BlockEntity} 多一层，是为了<b>双联箱</b>：它在菜单里是一个
+     * {@code CompoundContainer} —— 两个半个箱子被包在里面，而它自己不是方块实体。
+     * 不接这一手的话，双联箱会一路走进"查不到"那条分支：两个箱子里的食物都按玩家脚下的倍率记账，
+     * 冷箱 / {@code container_rules} 的修正全部不生效，而且只留一条 warn。
+     *
+     * <p>取哪一半都行：双联箱的两半一定是相邻的同种箱子，群系和容器修正必然一致。
+     */
+    @Nullable
+    private static BlockEntity blockEntityBehind(Container container) {
+        if (container instanceof BlockEntity blockEntity) return blockEntity;
+        if (container instanceof CompoundContainerAccessor accessor
+                && accessor.shelflife$container1() instanceof BlockEntity blockEntity) {
+            return blockEntity;
+        }
+        return null;
     }
 }
